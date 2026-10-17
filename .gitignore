@@ -4,10 +4,16 @@
 .vscode/launch.json
 .vscode/ipch
 include/wifi_credentials.h
+include/server_config.h
+server/config.yaml
+server/outputs/
 *.jpg
 compile_commands.json
 result
 backups/
 __pycache__/
 tests/__pycache__/
+server/**/__pycache__/
 .DS_Store
+.env
+

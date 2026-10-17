@@ -1,5 +1,5 @@
 {
-  description = "Project Somnium — ESP32-S3 AI camera firmware";
+  description = "Project Somnium — ESP32 edge client + laptop server";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
@@ -13,12 +13,17 @@
         packages = with pkgs; [
           platformio
           curl
+          jq
           clang-tools
           nixfmt
           (python3.withPackages (
             pythonPackages: with pythonPackages; [
               pyserial
               pillow
+              fastapi
+              uvicorn
+              pyyaml
+              python-multipart
             ]
           ))
         ];

@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+import json
+import urllib.error
+import urllib.request
+from typing import Any
+
+from somnium_server.config import env_secret
+from somnium_server.providers.prompt_template import TemplatePromptProvider
+
+
+class OpenAICompatPromptProvider:
+    """Any OpenAI-compatible /v1/chat/completions endpoint."""
+
+    def synthesize(
+        self,
+        *,
+        style_id: str,
+        style: dict[str, Any],
+        context: dict[str, Any],
+        prompt_cfg: dict[str, Any],
+    ) -> str:
+        key = env_secret(prompt_cfg.get("api_key_env", ""))
+        if not key:
+            return TemplatePromptProvider().synthesize(
+                style_id=style_id, style=style, context=context, prompt_cfg=prompt_cfg
+            )
+
+        base = prompt_cfg.get("base_url", "https://api.openai.com/v1").rstrip("/")
+        user = TemplatePromptProvider().synthesize(
+            style_id=style_id, style=style, context=context, prompt_cfg=prompt_cfg
+        )
+        body = {
+            "model": prompt_cfg.get("model", "gpt-4o-mini"),
+            "temperature": prompt_cfg.get("temperature", 0.7),
+            "messages": [
+                {"role": "system", "content": prompt_cfg.get("system", "")},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Style id: {style_id}\n"
+                        f"Draft to refine:\n{user}\n\n"
+                        f"Full context JSON:\n{json.dumps(context)}"
+                    ),
+                },
+            ],
+        }
+        req = urllib.request.Request(
+            f"{base}/chat/completions",
+            data=json.dumps(body).encode(),
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                payload = json.loads(resp.read().decode())
+            return payload["choices"][0]["message"]["content"].strip()
+        except (urllib.error.URLError, KeyError, IndexError, json.JSONDecodeError):
+            return user

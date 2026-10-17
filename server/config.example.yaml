@@ -1,0 +1,80 @@
+# Copy to config.yaml and edit. Prompt/model swaps happen here — not in code.
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  # Directory for saved request/response JPEGs (relative to server/)
+  output_dir: "outputs"
+
+# Fallback when geo-IP is useless (phone hotspot). Hackathon venue coords.
+location:
+  default_lat: 37.7749
+  default_lon: -122.4194
+  default_label: "Hackathon venue"
+
+# Style presets shown on the camera (style_id in the HTTP request).
+styles:
+  cartoon:
+    label: Cartoon
+    # Extra flavour merged into the prompt synthesizer / templates.
+    keywords: "bold outlines, flat colors, playful cartoon illustration"
+  cyberpunk:
+    label: Cyberpunk
+    keywords: "neon rain, chrome, densha cyberpunk night city"
+  noir:
+    label: Noir
+    keywords: "high-contrast black and white film noir, deep shadows"
+  watercolor:
+    label: Watercolor
+    keywords: "soft watercolor washes, paper texture, gentle blooms"
+
+# How context + style become an img2img prompt.
+prompt:
+  # Providers: template | openai_compat | echo
+  # template/echo need no API key. openai_compat talks to any OpenAI-style chat API
+  # (OpenAI, Groq, local vLLM, etc.) — set base_url + model.
+  provider: template
+  model: "gpt-4o-mini"
+  base_url: "https://api.openai.com/v1"
+  api_key_env: SOMNIUM_PROMPT_API_KEY
+  temperature: 0.7
+  system: |
+    You write a single concise img2img prompt for a reality-bending camera.
+    Weave in the scientific/context facts naturally. Do not mention being an AI.
+    Output ONLY the prompt text, no quotes or preamble.
+  # Used when provider is template (and as a fallback).
+  # Placeholders: {style_label} {style_keywords} {context_summary} {taken_at} {location_label}
+  user_template: |
+    Restyle this photo as {style_label} ({style_keywords}).
+    Scene context: {context_summary}
+    Captured at {taken_at} near {location_label}.
+    Keep composition recognizable; transform mood and rendering.
+
+# Image / img2img model. Swap provider to change backends without code edits.
+image:
+  # Providers: echo | http
+  # echo — returns the input JPEG (pipeline bring-up, no GPU/API).
+  # http  — POST JSON/multipart to any HTTP img2img endpoint you configure.
+  provider: echo
+  api_key_env: SOMNIUM_IMAGE_API_KEY
+  # --- http provider knobs (ignored by echo) ---
+  endpoint: "https://example.com/v1/images/edits"
+  method: POST
+  # json | multipart
+  body_mode: json
+  # How the prompt + image are sent (provider-specific mapping).
+  # For json: image is base64 under image_field.
+  image_field: image
+  prompt_field: prompt
+  # Extra static fields merged into every request (model ids, size, etc.)
+  extra:
+    model: "your-model-id-here"
+    # strength: 0.65
+
+# Context enrichment stubs (real APIs can replace these later).
+context:
+  # Providers: stub | (future: openmeteo, astronomy_api, …)
+  provider: stub
+  include_weather: true
+  include_astro: true
+  include_sun: true
