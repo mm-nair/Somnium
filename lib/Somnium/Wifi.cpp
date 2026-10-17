@@ -2,7 +2,6 @@
 
 #include <WiFi.h>
 
-#include "Config.h"
 #include "Console.h"
 
 #if __has_include("wifi_credentials.h")
@@ -22,18 +21,14 @@ bool gLoggedConnected = false;
 
 bool Wifi::begin() {
   if (strlen(wifiNetworkName) == 0) {
-    Console::println(
-        "Wi-Fi: copy include/wifi_credentials.example.h to "
-        "include/wifi_credentials.h and set 2.4 GHz credentials.");
     return false;
   }
-
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.begin(wifiNetworkName, wifiNetworkPassword);
   gStarted = true;
   gLoggedConnected = false;
-  Console::printf("Wi-Fi: connecting to %s ...\n", wifiNetworkName);
+  Console::printf("WIFI connecting %s\n", wifiNetworkName);
   return true;
 }
 
@@ -46,12 +41,10 @@ bool Wifi::waitConnected(unsigned long timeoutMs) {
     delay(250);
   }
   if (WiFi.status() != WL_CONNECTED) {
-    Console::println("Wi-Fi: connect timed out.");
     return false;
   }
   gLoggedConnected = true;
-  Console::printf("Wi-Fi: %s (%d dBm)\n", WiFi.localIP().toString().c_str(),
-                  WiFi.RSSI());
+  Console::printf("WIFI %s %d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
   return true;
 }
 
@@ -62,8 +55,7 @@ void Wifi::poll() {
     return;
   }
   gLoggedConnected = true;
-  Console::printf("Wi-Fi: %s (%d dBm)\n", WiFi.localIP().toString().c_str(),
-                  WiFi.RSSI());
+  Console::printf("WIFI %s %d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
 }
 
 String Wifi::ipAddress() {

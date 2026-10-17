@@ -1,5 +1,7 @@
 #include "Inputs.h"
 
+#include "Config.h"
+
 namespace Somnium {
 
 Inputs::Button Inputs::sShutter{};

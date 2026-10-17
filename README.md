@@ -1,102 +1,83 @@
 # Project Somnium
 
-DIY reality-bending AI camera for a 36-hour hackathon. This repo is the **ESP32-S3 edge client**: capture a JPEG, show it on the rear SPI LCD, read the encoder/shutter, and keep Wi-Fi/serial ready for a later Stable Diffusion backend.
+ESP32-S3 edge client for a hackathon AI camera. Hardware library + bring-up firmware only (no UI / no API yet).
 
-Current scope: hardware bring-up library + thin firmware. **No UI chrome and no API client yet.**
+## Pins
 
-## Hardware
+| LCD | Encoder | Shutter |
+| --- | --- | --- |
+| SCK 21, MOSI 47, DC 14, CS 41, RST 48 | CLK 1, DT 2, SW 42 | GPIO 3 |
 
-| Piece | Notes |
-| --- | --- |
-| Controller | Freenove ESP32-S3 WROOM CAM (FNK0085, N16R8 — 16 MB flash, 8 MB OPI PSRAM) |
-| Sensor | Board camera (this kit uses **GC0308**; RGB565 + software JPEG) |
-| Display | 2.4" SPI TFT (ILI9341-compatible) |
-| Controls | Rotary encoder (turn + press) + separate shutter button |
+## Build
 
-### Pin map (wiring diagram)
+```sh
+nix develop
+pio run -t upload --upload-port /dev/ttyACM0
+```
 
-| Function | GPIO |
-| --- | --- |
-| LCD SCK | 21 |
-| LCD MOSI | 47 |
-| LCD DC | 14 |
-| LCD CS | 41 |
-| LCD RST | 48 |
-| Encoder CLK | 1 |
-| Encoder DT | 2 |
-| Encoder SW | 42 |
-| Shutter | 3 |
+Optional Wi-Fi: copy `include/wifi_credentials.example.h` → `include/wifi_credentials.h`.
 
-Inputs are active LOW with `INPUT_PULLUP`. LCD VCC/LED and encoder `+` are on the 3V3 rail (LED via 100 Ω). Camera DVP pins are fixed by the Freenove board (see `lib/Somnium/Config.h`).
+## Tests
 
-> The overview text mentioned four discrete buttons on GPIOs 1/2/42/45. The physical diagram uses an encoder on 1/2/42 and shutter on 3 — firmware follows the diagram.
+```sh
+nix develop
+
+# live button / encoder feed
+python tests/monitor_inputs.py
+python tests/monitor_inputs.py --port /dev/ttyACM0
+
+# capture → LCD, also save JPEG locally
+python tests/capture_photo.py
+python tests/capture_photo.py -o shot.jpg --width 320
+```
+
+Serial protocol (921600 baud): `hello` → `OK somnium …`; `capture [w] [q]` → JPEG framed by `PHOTO` / `PHOTO_END`. Physical shutter release also captures to the LCD.
 
 ## Layout
 
 ```
-Somnium/
-  platformio.ini          # espressif32 + Freenove N16R8 overrides
-  flake.nix               # platformio + pyserial/pillow shell
-  include/                # wifi_credentials.example.h (copy → wifi_credentials.h)
-  lib/Somnium/            # unified hardware library
-    Config.h              # pins + defaults
-    Console.*             # USB-UART logging
-    Wifi.*                # STA connect / poll
-    Inputs.*              # debounced shutter + quadrature encoder
-    Camera.*              # esp_camera capture → JPEG
-    Display.*             # ILI9341 blit (no UI)
-    Image.*               # takePhoto / JPEG helpers (+ drawJpeg stub)
-    Somnium.h             # umbrella + Somnium::begin()
-  src/main.cpp            # bring-up loop using the library
+lib/Somnium/     hardware (Config, Camera, Display, Inputs, Wifi, Host, …)
+lib/SomniumUi/   page UI toolkit (not Somnium screens yet)
+src/main.cpp     event loop + EVT lines
+tests/           monitor_inputs.py, capture_photo.py
 ```
 
-Build the full product by extending `lib/Somnium` (HTTP client, style presets, gallery) and keeping `src/main.cpp` thin.
+## UI toolkit (`SomniumUi`)
 
-## Build & flash
+Generic building blocks for later screens (loading, capture, gallery, …):
 
-```sh
-nix develop
-cp include/wifi_credentials.example.h include/wifi_credentials.h
-# edit credentials — 2.4 GHz only
-
-pio run -t upload --upload-port /dev/ttyACM0
-pio device monitor --port /dev/ttyACM0
-```
-
-Use the board’s **USB-to-UART** connector (CH343), not native USB OTG. Stable by-id path from the prep board often looks like `/dev/serial/by-id/usb-1a86_USB_Single_Serial_*-if00`.
-
-## Firmware behavior
-
-1. Serial banner + pin dump  
-2. Init encoder/shutter, LCD (black), camera, Wi-Fi (background if credentials present)  
-3. **Shutter release** → capture JPEG, draw RGB565 frame on LCD, log size/CRC  
-4. **Encoder turn** → cycle a style index (logged only; no API yet)  
-5. Encoder press/release logged for later mode binding  
-
-`Image::drawJpeg()` is intentionally a stub for future stylized JPEG replies.
-
-## Library quick reference
+| Piece | Role |
+| --- | --- |
+| `Ui` | binds to the LCD, `tick()` → update + dirty draw |
+| `Navigator` | page stack (`push` / `replace` / `pop`) |
+| `Transition` | `None`, `FadeThrough`, `SlideLeft`, `SlideRight` |
+| `Page` | `onEnter` / `onExit` / `update` / `draw` / `handleAction` |
+| `Canvas` | clipped/origin-aware fill, lines, RGB565 blit |
+| `Text` | measure, align, wrap (GFX 6×8 font) |
+| `Tween` / `Easing` | short property animations |
+| `Theme` | colors + spacing tokens |
 
 ```cpp
-#include <Somnium.h>
+#include <SomniumUi.h>
 
+using namespace Somnium::Ui;
+
+struct BlankPage : Page {
+  void draw(Canvas &c) override {
+    c.clear(Ui::theme().bg);
+    Text::drawIn(c, "Hello", c.bounds(),
+                 {Ui::theme().text, Ui::theme().textMd, Align::Center,
+                  VAlign::Middle});
+  }
+};
+
+BlankPage page;
 void setup() {
   Somnium::begin();
+  Ui::begin();
+  Ui::push(&page);
 }
-
-void loop() {
-  Somnium::Wifi::poll();
-  Somnium::Inputs::update();
-  if (Somnium::Inputs::pollEvent() == Somnium::InputEvent::ShutterReleased) {
-    Somnium::JpegBuffer photo;
-    if (Somnium::Image::takePhoto(photo)) {
-      // photo.data / photo.length ready for HTTP POST later
-      Somnium::Image::freePhoto(photo);
-    }
-  }
-}
+void loop() { Ui::tick(); }
 ```
 
-## Reference
-
-Working patterns (camera RGB565→JPEG, Adafruit ILI9341, PlatformIO N16R8 flags) were adapted from `~/Projects/Hackathon_Prep`, reorganized into one library instead of scattered examples.
+Efficiency: redraw only when a page is dirty or a transition is running; slides use clip+origin; fade-through is a cheap solid wipe via the theme background (no full-frame blend buffer).

@@ -2,8 +2,6 @@
 
 #include <Arduino.h>
 
-#include "Config.h"
-
 namespace Somnium {
 
 enum class InputEvent : uint8_t {
@@ -12,10 +10,9 @@ enum class InputEvent : uint8_t {
   ShutterReleased,
   EncoderPressed,
   EncoderReleased,
-  EncoderTurned,  // delta in Inputs::lastEncoderDelta()
+  EncoderTurned,
 };
 
-// Debounced shutter + encoder (quadrature + push). Active LOW with pull-ups.
 class Inputs {
  public:
   static void begin();
@@ -25,9 +22,6 @@ class Inputs {
   static bool encoderButtonDown();
   static long encoderPosition();
   static int8_t lastEncoderDelta();
-
-  // Returns the next pending event since the previous call (queue of 1 kind
-  // each — call repeatedly until None if you need to drain a burst).
   static InputEvent pollEvent();
 
  private:

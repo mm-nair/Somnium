@@ -17,7 +17,7 @@ bool Camera::configure(int width) {
     return false;
   }
   if (!psramFound()) {
-    Console::println("Camera: PSRAM missing — check N16R8 qio_opi settings.");
+    Console::println("ERR no_psram");
     return false;
   }
 
@@ -50,8 +50,7 @@ bool Camera::configure(int width) {
   const esp_err_t result = esp_camera_init(&config);
   if (result != ESP_OK) {
     sActiveWidth = 0;
-    Console::printf("Camera: init failed %s (0x%x)\n", esp_err_to_name(result),
-                    result);
+    Console::printf("ERR camera_init 0x%x\n", result);
     return false;
   }
   sActiveWidth = width;
@@ -65,8 +64,8 @@ bool Camera::begin(int width) {
   if (sMutex == nullptr || !configure(width)) {
     return false;
   }
-  Console::printf("Camera: ready %dx%d, sensor PID 0x%04x\n", width,
-                  width * 3 / 4, esp_camera_sensor_get()->id.PID);
+  Console::printf("CAM %dx%d pid=0x%04x\n", width, width * 3 / 4,
+                  esp_camera_sensor_get()->id.PID);
   return true;
 }
 
@@ -116,8 +115,7 @@ bool Camera::captureJpeg(JpegBuffer &out, int width, int jpegQuality) {
   }
 
   const unsigned long encodeStarted = millis();
-  const bool encoded =
-      frame2jpg(frame, jpegQuality, &out.data, &out.length);
+  const bool encoded = frame2jpg(frame, jpegQuality, &out.data, &out.length);
   out.encodeMs = millis() - encodeStarted;
   if (encoded && sFrameCallback != nullptr) {
     sFrameCallback(frame);

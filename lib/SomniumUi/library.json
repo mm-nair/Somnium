@@ -1,0 +1,7 @@
+{
+  "name": "SomniumUi",
+  "version": "0.1.0",
+  "description": "Page-based UI toolkit for Somnium (canvas, text, animation, navigation)",
+  "frameworks": "arduino",
+  "platforms": "espressif32"
+}
