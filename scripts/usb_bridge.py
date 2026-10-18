@@ -18,6 +18,7 @@ import json
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -99,6 +100,18 @@ def send_time(ser: serial.Serial) -> None:
     write_exact(ser, f"TIME {int(time.time())}\n".encode())
 
 
+def _field_if(parts: list[bytes], boundary: str, name: str, value: str | None) -> None:
+    if value is None or value == "":
+        return
+    parts.append(
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+            f"{value}\r\n"
+        ).encode()
+    )
+
+
 def post_process(
     jpeg: bytes,
     *,
@@ -108,6 +121,14 @@ def post_process(
     lon: str | None,
     url: str,
     timeout: float,
+    device_id: str | None = None,
+    sequence_id: str | None = None,
+    queue_id: str | None = None,
+    battery_pct: str | None = None,
+    battery_mv: str | None = None,
+    charging: str | None = None,
+    queue_depth: str | None = None,
+    low_battery: str | None = None,
 ) -> bytes:
     from datetime import datetime, timezone
 
@@ -131,6 +152,14 @@ def post_process(
         field("lat", lat)
     if lon:
         field("lon", lon)
+    _field_if(parts, boundary, "device_id", device_id)
+    _field_if(parts, boundary, "sequence_id", sequence_id)
+    _field_if(parts, boundary, "queue_id", queue_id)
+    _field_if(parts, boundary, "battery_pct", battery_pct)
+    _field_if(parts, boundary, "battery_mv", battery_mv)
+    _field_if(parts, boundary, "charging", charging)
+    _field_if(parts, boundary, "queue_depth", queue_depth)
+    _field_if(parts, boundary, "low_battery", low_battery)
     parts.append(
         (
             f"--{boundary}\r\n"
@@ -319,6 +348,14 @@ def process_cook(
             lon=meta.get("lon"),
             url=url,
             timeout=timeout,
+            device_id=meta.get("dev"),
+            sequence_id=meta.get("seq"),
+            queue_id=meta.get("qid") or meta.get("seq"),
+            battery_pct=meta.get("bat"),
+            battery_mv=meta.get("mv"),
+            charging=meta.get("chg"),
+            queue_depth=meta.get("q"),
+            low_battery=meta.get("low"),
         )
         send_dream(ser, dream, transaction_id, reader)
         print(f"DREAM {len(dream)} B accepted by ESP id={transaction_id}", flush=True)
@@ -335,6 +372,58 @@ def process_cook(
         else:
             write_exact(ser, f"ERR bridge {message}\n".encode())
         raise
+
+
+def status_url_for(process_url: str) -> str:
+    parts = urllib.parse.urlsplit(process_url)
+    return urllib.parse.urlunsplit(
+        (parts.scheme, parts.netloc, "/api/device/status", "", "")
+    )
+
+
+def parse_status_line(line: str) -> dict[str, str]:
+    text = line.strip()
+    if text.startswith("STATUS "):
+        text = text[7:]
+    elif text.startswith("STATUS"):
+        text = text[6:].strip()
+    out: dict[str, str] = {}
+    for tok in text.split():
+        if "=" in tok:
+            key, value = tok.split("=", 1)
+            out[key] = value
+    return out
+
+
+def status_payload(fields: dict[str, str]) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    if fields.get("dev"):
+        payload["device_id"] = fields["dev"]
+    if fields.get("bat"):
+        payload["battery_pct"] = fields["bat"]
+    if fields.get("mv"):
+        payload["battery_mv"] = fields["mv"]
+    if "chg" in fields:
+        payload["charging"] = fields["chg"]
+    if "low" in fields:
+        payload["low_battery"] = fields["low"]
+    if "q" in fields:
+        payload["queue_depth"] = fields["q"]
+    if fields.get("seq"):
+        payload["sequence_id"] = fields["seq"]
+    return payload
+
+
+def post_status(payload: dict[str, object], url: str, timeout: float = 2.0) -> None:
+    body = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        resp.read()
 
 
 def open_serial(port: str) -> serial.Serial:
@@ -414,6 +503,16 @@ def main() -> int:
                 if line is None:
                     continue
                 text = line.decode("utf-8", "replace").strip()
+                if text.startswith("STATUS "):
+                    print(f"| {text}", flush=True)
+                    try:
+                        post_status(
+                            status_payload(parse_status_line(text)),
+                            status_url_for(args.url),
+                        )
+                    except Exception as error:
+                        print(f"status forward failed ({error})", flush=True)
+                    continue
                 if not text.startswith("COOK "):
                     if text:
                         print(f"| {text}", flush=True)

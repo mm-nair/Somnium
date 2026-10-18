@@ -13,6 +13,20 @@ def _parse_time(taken_at: str | None) -> datetime:
     return datetime.now(timezone.utc)
 
 
+def time_of_day(when: datetime) -> str:
+    """Wall-clock bucket of `when` (the offset it was sent with, not UTC)."""
+    hour = when.hour
+    if 5 <= hour < 8:
+        return "dawn"
+    if 8 <= hour < 12:
+        return "morning"
+    if 12 <= hour < 17:
+        return "afternoon"
+    if 17 <= hour < 20:
+        return "dusk"
+    return "night"
+
+
 class StubContextProvider:
     """Deterministic fake science data so the pipeline runs offline."""
 
@@ -30,8 +44,10 @@ class StubContextProvider:
         use_lat = lat if lat is not None else float(location_cfg.get("default_lat", 0))
         use_lon = lon if lon is not None else float(location_cfg.get("default_lon", 0))
         label = location_cfg.get("default_label", "unknown")
-        hour = when.astimezone(timezone.utc).hour
+        # Use the timestamp's own clock. Z is UTC; an offset is that local hour.
+        hour = when.hour
         is_night = hour < 6 or hour >= 20
+        part = time_of_day(when)
 
         out: dict[str, Any] = {
             "taken_at": when.isoformat(),
@@ -41,6 +57,10 @@ class StubContextProvider:
             "location_label": label,
             "is_night": is_night,
             "day_part": "night" if is_night else "day",
+            "time_of_day": part,
+            "time_basis": "capture" if taken_at else "server",
+            "historical": False,
+            "source": "stub",
         }
         if context_cfg.get("include_sun", True):
             out["sun"] = {
@@ -60,7 +80,7 @@ class StubContextProvider:
             }
 
         bits = [
-            f"{out['day_part']}",
+            part,
             f"{out.get('weather', {}).get('summary', '')}",
             f"{out.get('weather', {}).get('temp_c', '')}C",
         ]

@@ -1,5 +1,6 @@
 import binascii
 import io
+import json
 import sys
 import unittest
 import urllib.error
@@ -73,12 +74,15 @@ class UsbBridgeTests(unittest.TestCase):
         self.stdout.__enter__()
         self.addCleanup(self.stdout.__exit__, None, None, None)
 
-    def cook_header(self, jpeg=None):
+    def cook_header(self, jpeg=None, extra=""):
         jpeg = self.jpeg if jpeg is None else jpeg
-        return (
+        header = (
             f"COOK style=popcomic len={len(jpeg)} id={self.transaction_id} "
             f"crc={binascii.crc32(jpeg):08x}"
         )
+        if extra:
+            header = f"{header} {extra}"
+        return header
 
     def reply_to_dream(self, ser, data):
         if data.startswith(b"DREAM "):
@@ -305,6 +309,77 @@ class UsbBridgeTests(unittest.TestCase):
     def test_cooktest_accepts_explicit_completion(self):
         ser = SerialStub([b"OK cooktest 11\n"])
         usb_cooktest.wait_cooktest(usb_bridge.SerialLineReader(ser), 0.1)
+
+    def test_queue_and_battery_fields_are_posted_with_the_shot(self):
+        header = self.cook_header(
+            extra=(
+                "dev=esp1 seq=9 qid=9 bat=71.5 mv=3812 chg=0 q=2 low=0 "
+                "taken_at=2024-01-15T03:00:00Z"
+            )
+        )
+        ser = SerialStub([self.jpeg, b"\nCOOK_END\n"], self.reply_to_dream)
+        captured = {}
+
+        class Body(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_open(req, timeout=0):
+            captured["body"] = req.data
+            captured["timeout"] = timeout
+            return Body(self.jpeg)
+
+        with patch.object(usb_bridge.urllib.request, "urlopen", fake_open):
+            self.process_cook(ser, header)
+        body = captured["body"]
+        self.assertIn(b'name="device_id"', body)
+        self.assertIn(b"esp1", body)
+        self.assertIn(b'name="sequence_id"', body)
+        self.assertIn(b'name="queue_id"', body)
+        self.assertIn(b'name="battery_pct"', body)
+        self.assertIn(b"71.5", body)
+        self.assertIn(b'name="battery_mv"', body)
+        self.assertIn(b"3812", body)
+        self.assertIn(b'name="queue_depth"', body)
+        self.assertIn(b"2024-01-15T03:00:00Z", body)
+
+    def test_status_line_posts_json_to_the_device_endpoint(self):
+        self.assertEqual(
+            usb_bridge.status_url_for("http://127.0.0.1:8080/v1/process"),
+            "http://127.0.0.1:8080/api/device/status",
+        )
+        payload = usb_bridge.status_payload(
+            usb_bridge.parse_status_line(
+                "STATUS dev=esp1 bat=71.5 mv=3812 chg=1 low=0 q=2 seq=9"
+            )
+        )
+        self.assertEqual(payload["device_id"], "esp1")
+        self.assertEqual(payload["battery_pct"], "71.5")
+        self.assertEqual(payload["queue_depth"], "2")
+        captured = {}
+
+        class Body(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_open(req, timeout=0):
+            captured["url"] = req.full_url
+            captured["body"] = json.loads(req.data.decode())
+            captured["type"] = req.headers["Content-type"]
+            return Body(b"{}")
+
+        with patch.object(usb_bridge.urllib.request, "urlopen", fake_open):
+            usb_bridge.post_status(payload, "http://127.0.0.1:8080/api/device/status")
+        self.assertEqual(captured["url"], "http://127.0.0.1:8080/api/device/status")
+        self.assertEqual(captured["body"]["device_id"], "esp1")
+        self.assertEqual(captured["body"]["charging"], "1")
+        self.assertIn("application/json", captured["type"])
 
 
 if __name__ == "__main__":
