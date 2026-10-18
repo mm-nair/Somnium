@@ -7,17 +7,25 @@
     "lon": -122.3035,
     "label": "DubHacks 2026"
   },
+  "context": {
+    "provider": "openmeteo",
+    "include_weather": true,
+    "include_astro": true,
+    "include_sun": true
+  },
   "prompt_api": {
-    "base_url": "https://api.openai.com/v1",
-    "model": "gpt-4o-mini",
-    "api_key_env": "SOMNIUM_PROMPT_API_KEY"
+    "base_url": "https://api.x.ai/v1",
+    "model": "grok-3-mini",
+    "api_key_env": "XAI_KEY",
+    "temperature": 0.7
   },
   "image_api": {
-    "endpoint": "",
-    "api_key_env": "SOMNIUM_IMAGE_API_KEY",
-    "body_mode": "json",
-    "image_field": "image",
-    "prompt_field": "prompt",
-    "extra": {}
+    "base_url": "https://api.x.ai/v1",
+    "model": "grok-imagine-image-2.0",
+    "api_key_env": "XAI_KEY",
+    "extra": {
+      "aspect_ratio": "4:3",
+      "resolution": "1k"
+    }
   }
 }

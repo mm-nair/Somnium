@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from somnium_server.providers.context_openmeteo import OpenMeteoContextProvider
 from somnium_server.providers.context_stub import StubContextProvider
 from somnium_server.providers.image_echo import EchoImageProvider
 from somnium_server.providers.image_http import HttpImageProvider
+from somnium_server.providers.image_xai import XaiImageProvider
 from somnium_server.providers.prompt_openai import OpenAICompatPromptProvider
 from somnium_server.providers.prompt_template import (
     EchoPromptProvider,
@@ -14,8 +16,10 @@ from somnium_server.providers.prompt_template import (
 
 def context_provider(name: str):
     name = (name or "stub").lower()
-    if name == "stub":
+    if name in ("stub", "fake"):
         return StubContextProvider()
+    if name in ("openmeteo", "open-meteo", "meteo"):
+        return OpenMeteoContextProvider()
     raise KeyError(f"Unknown context provider: {name}")
 
 
@@ -23,7 +27,7 @@ def prompt_provider(name: str):
     name = (name or "template").lower()
     if name in ("template", "echo"):
         return TemplatePromptProvider() if name == "template" else EchoPromptProvider()
-    if name in ("openai_compat", "openai", "chat"):
+    if name in ("openai_compat", "openai", "chat", "xai", "grok"):
         return OpenAICompatPromptProvider()
     raise KeyError(f"Unknown prompt provider: {name}")
 
@@ -32,6 +36,8 @@ def image_provider(name: str):
     name = (name or "echo").lower()
     if name == "echo":
         return EchoImageProvider()
+    if name in ("xai", "grok", "grok_imagine"):
+        return XaiImageProvider()
     if name == "http":
         return HttpImageProvider()
     raise KeyError(

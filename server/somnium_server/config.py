@@ -9,6 +9,27 @@ ROOT = Path(__file__).resolve().parent.parent
 REPO = ROOT.parent
 CREATIVE_PATH = REPO / "creative" / "creative.json"
 SETTINGS_PATH = ROOT / "settings.json"
+ENV_PATH = REPO / ".env"
+
+
+def load_dotenv(path: Path = ENV_PATH) -> None:
+    """Load KEY=VALUE lines from .env into os.environ (does not override)."""
+    if not path.is_file():
+        return
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip("'").strip('"')
+        if key and key not in os.environ:
+            os.environ[key] = value
+    # Convenience aliases
+    if os.environ.get("XAI_KEY") and not os.environ.get("XAI_API_KEY"):
+        os.environ["XAI_API_KEY"] = os.environ["XAI_KEY"]
+    if os.environ.get("XAI_API_KEY") and not os.environ.get("XAI_KEY"):
+        os.environ["XAI_KEY"] = os.environ["XAI_API_KEY"]
 
 
 def env_secret(name: str) -> str | None:
@@ -25,6 +46,7 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 def load_config() -> dict[str, Any]:
     """Merge creative.json (edit this!) with settings.json (plumbing)."""
+    load_dotenv()
     creative = _load_json(CREATIVE_PATH)
     settings = _load_json(SETTINGS_PATH) if SETTINGS_PATH.is_file() else {}
 
@@ -33,8 +55,8 @@ def load_config() -> dict[str, Any]:
     venue = settings.get("venue") or {}
     prompt_api = settings.get("prompt_api") or {}
     image_api = settings.get("image_api") or {}
+    context_cfg = settings.get("context") or {}
 
-    # Shape expected by existing pipeline / providers.
     return {
         "_creative_path": str(CREATIVE_PATH),
         "_settings_path": str(SETTINGS_PATH),
@@ -59,28 +81,39 @@ def load_config() -> dict[str, Any]:
         },
         "prompt": {
             "provider": models.get("prompt_provider", "template"),
-            "model": prompt_api.get("model", "gpt-4o-mini"),
-            "base_url": prompt_api.get("base_url", "https://api.openai.com/v1"),
-            "api_key_env": prompt_api.get("api_key_env", "SOMNIUM_PROMPT_API_KEY"),
-            "temperature": 0.7,
+            "model": prompt_api.get("model", "grok-3-mini"),
+            "base_url": prompt_api.get("base_url", "https://api.x.ai/v1"),
+            "api_key_env": prompt_api.get("api_key_env", "XAI_KEY"),
+            "temperature": prompt_api.get("temperature", 0.7),
             "system": creative.get("prompt_system", ""),
-            "user_template": "{prompt}",
+            "user_template": (
+                "Style: {style_label} ({style_keywords}).\n"
+                "Mood / space context: {context_summary}\n"
+                "Captured: {taken_at} near {location_label}.\n"
+                "Draft: {prompt}"
+            ),
         },
         "image": {
             "provider": models.get("image_provider", "echo"),
-            "api_key_env": image_api.get("api_key_env", "SOMNIUM_IMAGE_API_KEY"),
+            "api_key_env": image_api.get("api_key_env", "XAI_KEY"),
+            "base_url": image_api.get("base_url", "https://api.x.ai/v1"),
+            "model": image_api.get("model", "grok-imagine-image-2.0"),
             "endpoint": image_api.get("endpoint", ""),
             "method": "POST",
             "body_mode": image_api.get("body_mode", "json"),
             "image_field": image_api.get("image_field", "image"),
             "prompt_field": image_api.get("prompt_field", "prompt"),
-            "extra": image_api.get("extra") or {},
+            "extra": {
+                "model": image_api.get("model", "grok-imagine-image-2.0"),
+                **(image_api.get("extra") or {}),
+            },
         },
         "context": {
-            "provider": "stub",
-            "include_weather": True,
-            "include_astro": True,
-            "include_sun": True,
+            "provider": models.get("context_provider")
+            or context_cfg.get("provider", "openmeteo"),
+            "include_weather": context_cfg.get("include_weather", True),
+            "include_astro": context_cfg.get("include_astro", True),
+            "include_sun": context_cfg.get("include_sun", True),
         },
         "creative": creative,
     }

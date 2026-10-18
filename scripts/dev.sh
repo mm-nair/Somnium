@@ -36,6 +36,11 @@ Somnium bring-up
    ./scripts/ui_preview.sh --screen storage
    ./scripts/ui_preview.sh --export /tmp/somnium-ui
 
+5) Camera-free image cook (xAI + Open-Meteo mood data)
+   # XAI_KEY in .env
+   ./scripts/cook.sh photo.jpg --style noir --at 2026-10-17T19:30:00Z
+   # writes server/outputs/*_0_orig.jpg and *_1_dream.jpg
+
 Hardware USB tests
    python tests/monitor_inputs.py
    python tests/capture_photo.py -o shot.jpg

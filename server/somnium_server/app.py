@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -10,7 +11,7 @@ from somnium_server.pipeline import Pipeline
 
 cfg = load_config()
 pipeline = Pipeline(cfg)
-app = FastAPI(title="Somnium Server", version="0.1.0")
+app = FastAPI(title="Somnium Server", version="0.2.0")
 
 
 @app.get("/health")
@@ -19,8 +20,9 @@ def health():
         "ok": True,
         "prompt_provider": cfg.get("prompt", {}).get("provider"),
         "image_provider": cfg.get("image", {}).get("provider"),
+        "context_provider": cfg.get("context", {}).get("provider"),
         "styles": list((cfg.get("styles") or {}).keys()),
-        "config": cfg.get("_config_path"),
+        "creative": cfg.get("_creative_path"),
     }
 
 
@@ -32,12 +34,14 @@ async def process(
     taken_at: Optional[str] = Form(None),
     lat: Optional[float] = Form(None),
     lon: Optional[float] = Form(None),
+    force_real: Optional[str] = Form(None),
 ):
     raw = await image.read()
     if len(raw) < 4 or raw[:2] != b"\xff\xd8":
         return JSONResponse({"error": "expected JPEG"}, status_code=400)
 
     client_ip = request.client.host if request.client else None
+    force = (force_real or "").lower() in ("1", "true", "yes", "on")
     try:
         result = pipeline.process(
             image=raw,
@@ -46,6 +50,7 @@ async def process(
             client_ip=client_ip,
             lat=lat,
             lon=lon,
+            force_real=force,
         )
     except Exception as err:  # noqa: BLE001 — edge client gets a clean error
         return JSONResponse({"error": str(err)}, status_code=502)
@@ -54,6 +59,8 @@ async def process(
         "X-Somnium-Style": result.style_id,
         "X-Somnium-Prompt": result.prompt[:512],
         "X-Somnium-Context": result.context.get("summary", "")[:256],
+        "X-Somnium-Orig": Path(result.meta.get("orig_path", "")).name,
+        "X-Somnium-Dream": Path(result.meta.get("dream_path", "")).name,
     }
     return Response(content=result.image, media_type="image/jpeg", headers=headers)
 

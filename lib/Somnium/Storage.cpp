@@ -2,6 +2,7 @@
 
 #include <FS.h>
 #include <SD_MMC.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "Console.h"
@@ -30,6 +31,10 @@ bool endsWithJpg(const char *name) {
   }
   const char *ext = name + (n - 4);
   return strcasecmp(ext, ".jpg") == 0 || strcasecmp(ext, ".JPG") == 0;
+}
+
+int pathCmp(const void *a, const void *b) {
+  return strcmp(static_cast<const char *>(a), static_cast<const char *>(b));
 }
 
 void rescan() {
@@ -65,6 +70,10 @@ void rescan() {
     entry = dir.openNextFile();
   }
   dir.close();
+  // Alphabetical so …_0_orig then …_1_dream alternate when dialing.
+  if (gCount > 1) {
+    qsort(gPaths, static_cast<size_t>(gCount), sizeof(gPaths[0]), pathCmp);
+  }
 }
 
 }  // namespace

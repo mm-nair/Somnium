@@ -15,42 +15,43 @@
     {
       "id": "noir",
       "label": "NOIR",
-      "real": false,
+      "real": true,
       "keywords": "high-contrast black and white film noir, deep shadows, silver gelatin",
       "prompt": "Restyle as moody film noir. High contrast B&W, Venetian blinds light, cigarette-smoke atmosphere. Keep the subject's pose. Context: {context}."
     },
     {
       "id": "cartoon",
       "label": "CARTOON",
-      "real": false,
+      "real": true,
       "keywords": "bold outlines, flat pastel colors, playful cartoon cel shading",
       "prompt": "Restyle as a charming cartoon illustration with bold outlines and flat colors, kitchen-storybook warmth. Keep composition. Context: {context}."
     },
     {
       "id": "cyberpunk",
       "label": "CYBER",
-      "real": false,
+      "real": true,
       "keywords": "neon magenta and cyan, wet streets, chrome, futuristic night market",
       "prompt": "Restyle as neon cyberpunk night scene, magenta/cyan glow, reflective wet surfaces. Keep composition. Context: {context}."
     },
     {
       "id": "watercolor",
       "label": "WASH",
-      "real": false,
+      "real": true,
       "keywords": "soft watercolor blooms, paper tooth, gentle pigment granulation",
       "prompt": "Restyle as soft watercolor on cold-press paper, gentle blooms and pastel washes. Keep composition. Context: {context}."
     },
     {
       "id": "gourmet",
       "label": "GOURMET",
-      "real": false,
+      "real": true,
       "keywords": "food-magazine lighting, rich color grade, culinary editorial",
       "prompt": "Restyle like a gourmet food-magazine editorial with appetizing warm light and rich color. Kitchen DubHacks vibes. Keep composition. Context: {context}."
     }
   ],
-  "prompt_system": "You write one short img2img prompt for Somnium, a reality-bending camera. Output only the prompt.",
+  "prompt_system": "You write one short img2img edit prompt for Somnium, a reality-bending camera. Weave weather, day/night, and sky mood into the atmosphere. Keep the subject's pose and composition. Output ONLY the prompt text — no quotes, no preamble.",
   "models": {
-    "prompt_provider": "template",
-    "image_provider": "echo"
+    "prompt_provider": "openai_compat",
+    "image_provider": "xai",
+    "context_provider": "openmeteo"
   }
 }

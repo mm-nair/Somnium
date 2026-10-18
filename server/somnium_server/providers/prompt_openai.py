@@ -55,8 +55,12 @@ class OpenAICompatPromptProvider:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=90) as resp:
                 payload = json.loads(resp.read().decode())
-            return payload["choices"][0]["message"]["content"].strip()
-        except (urllib.error.URLError, KeyError, IndexError, json.JSONDecodeError):
-            return user
+            text = payload["choices"][0]["message"]["content"].strip()
+            return text or user
+        except urllib.error.HTTPError as err:
+            detail = err.read().decode(errors="replace")[:400]
+            raise RuntimeError(f"prompt HTTP {err.code}: {detail}") from err
+        except (urllib.error.URLError, KeyError, IndexError, json.JSONDecodeError) as err:
+            raise RuntimeError(f"prompt provider failed: {err}") from err

@@ -47,29 +47,61 @@ void freeStorageJpeg() {
   gStorageLen = 0;
 }
 
+char gLabelBuf[20] = "";
+
+const char *styleToken(const char *base) {
+  if (strstr(base, "noir") != nullptr) {
+    return "NOIR";
+  }
+  if (strstr(base, "cartoon") != nullptr) {
+    return "CARTOON";
+  }
+  if (strstr(base, "cyber") != nullptr) {
+    return "CYBER";
+  }
+  if (strstr(base, "water") != nullptr || strstr(base, "wash") != nullptr) {
+    return "WASH";
+  }
+  if (strstr(base, "gourmet") != nullptr) {
+    return "GOURMET";
+  }
+  return "PLATE";
+}
+
 const char *labelFromPath(const char *path) {
-  // "/somnium/noir_3.jpg" → "NOIR"
+  // "..._noir_0_orig.jpg" → "NOIR·raw" ; "..._1_dream.jpg" → "NOIR·mod"
   if (path == nullptr) {
     return "";
   }
   const char *base = strrchr(path, '/');
   base = base != nullptr ? base + 1 : path;
-  if (strncmp(base, "noir", 4) == 0) {
-    return "NOIR";
+  const char *style = styleToken(base);
+  const char *kind = "plt";
+  if (strstr(base, "_0_orig") != nullptr || strstr(base, "_orig") != nullptr) {
+    kind = "raw";
+  } else if (strstr(base, "_1_dream") != nullptr ||
+             strstr(base, "_dream") != nullptr ||
+             strstr(base, "_mod") != nullptr) {
+    kind = "mod";
   }
-  if (strncmp(base, "cartoon", 7) == 0) {
-    return "CARTOON";
+  snprintf(gLabelBuf, sizeof(gLabelBuf), "%s·%s", style, kind);
+  return gLabelBuf;
+}
+
+void savePair(const char *styleId, int shot, const uint8_t *orig, size_t origLen,
+              const uint8_t *dream, size_t dreamLen) {
+  if (!Somnium::Storage::ready()) {
+    return;
   }
-  if (strncmp(base, "cyberpunk", 9) == 0 || strncmp(base, "cyber", 5) == 0) {
-    return "CYBER";
+  char path[72];
+  if (orig != nullptr && origLen > 0) {
+    snprintf(path, sizeof(path), "/somnium/%s_%d_0_orig.jpg", styleId, shot);
+    Somnium::Storage::saveJpeg(path, orig, origLen);
   }
-  if (strncmp(base, "watercolor", 10) == 0 || strncmp(base, "wash", 4) == 0) {
-    return "WASH";
+  if (dream != nullptr && dreamLen > 0) {
+    snprintf(path, sizeof(path), "/somnium/%s_%d_1_dream.jpg", styleId, shot);
+    Somnium::Storage::saveJpeg(path, dream, dreamLen);
   }
-  if (strncmp(base, "gourmet", 7) == 0) {
-    return "GOURMET";
-  }
-  return "PLATE";
 }
 
 bool loadStorageIndex(int index0) {
@@ -156,13 +188,18 @@ void runPipeline() {
 
     Somnium::ProcessResponse resp;
     const bool ok = Somnium::ApiClient::process(req, resp);
-    Somnium::Image::freePhoto(photo);
     if (!ok) {
       Somnium::Console::printf("ERR api %s\n", resp.error.c_str());
       Somnium::ApiClient::freeResponse(resp);
+      Somnium::Image::freePhoto(photo);
       showMode();
       return;
     }
+
+    // Dual slideshow entries: unmodified then modified (dial alternates).
+    savePair(gMode.selected().id, gShotCount + 1, photo.data, photo.length,
+             resp.jpeg, resp.length);
+    Somnium::Image::freePhoto(photo);
 
     freeResult();
     gResultJpeg = resp.jpeg;
@@ -170,31 +207,20 @@ void runPipeline() {
     resp.jpeg = nullptr;
     resp.length = 0;
     Somnium::ApiClient::freeResponse(resp);
-
-    if (Somnium::Storage::ready() && gResultJpeg != nullptr) {
-      char path[64];
-      snprintf(path, sizeof(path), "/somnium/%s_%d.jpg", gMode.selected().id,
-               gShotCount + 1);
-      Somnium::Storage::saveJpeg(path, gResultJpeg, gResultLen);
-    }
     showReview();
     return;
   }
 #endif
 
+  // Offline: only the capture (still saved as the "orig" slot).
+  savePair(gMode.selected().id, gShotCount + 1, photo.data, photo.length,
+           nullptr, 0);
   freeResult();
   gResultJpeg = photo.data;
   gResultLen = photo.length;
   photo.data = nullptr;
   photo.length = 0;
   Somnium::Image::freePhoto(photo);
-
-  if (Somnium::Storage::ready() && gResultJpeg != nullptr) {
-    char path[64];
-    snprintf(path, sizeof(path), "/somnium/%s_%d.jpg", gMode.selected().id,
-             gShotCount + 1);
-    Somnium::Storage::saveJpeg(path, gResultJpeg, gResultLen);
-  }
   showReview();
 }
 

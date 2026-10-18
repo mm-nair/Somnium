@@ -12,6 +12,7 @@ from somnium_server.providers.registry import build_stack
 @dataclass
 class ProcessResult:
     image: bytes
+    original: bytes
     prompt: str
     context: dict[str, Any]
     style_id: str
@@ -37,6 +38,7 @@ class Pipeline:
         client_ip: str | None,
         lat: float | None = None,
         lon: float | None = None,
+        force_real: bool = False,
     ) -> ProcessResult:
         styles = self.cfg.get("styles") or {}
         if style_id not in styles:
@@ -57,8 +59,9 @@ class Pipeline:
             context=context,
             prompt_cfg=self.cfg.get("prompt") or {},
         )
-        # Modes with real=false (default) just echo the capture — no model call.
-        if style.get("real"):
+
+        use_real = force_real or bool(style.get("real"))
+        if use_real:
             result_image = self.stack["image"].transform(
                 image=image,
                 prompt=prompt,
@@ -69,15 +72,34 @@ class Pipeline:
             prompt = f"[placeholder/{style_id}] {prompt}"
 
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        stem = self.output_dir / f"{stamp}_{style_id}"
-        stem.with_suffix(".jpg").write_bytes(result_image)
-        stem.with_name(stem.name + "_in.jpg").write_bytes(image)
-        stem.with_suffix(".json").write_text(
+        if taken_at:
+            try:
+                stamp = (
+                    datetime.fromisoformat(taken_at.replace("Z", "+00:00"))
+                    .astimezone(timezone.utc)
+                    .strftime("%Y%m%dT%H%M%SZ")
+                )
+            except ValueError:
+                pass
+
+        # Dual slideshow entries: …_0_orig then …_1_dream (dial alternates).
+        stem = f"{stamp}_{style_id}"
+        orig_path = self.output_dir / f"{stem}_0_orig.jpg"
+        dream_path = self.output_dir / f"{stem}_1_dream.jpg"
+        meta_path = self.output_dir / f"{stem}.json"
+        orig_path.write_bytes(image)
+        dream_path.write_bytes(result_image)
+        meta_path.write_text(
             json.dumps(
                 {
                     "style_id": style_id,
                     "prompt": prompt,
                     "context": context,
+                    "taken_at": taken_at or context.get("taken_at"),
+                    "files": {
+                        "orig": orig_path.name,
+                        "dream": dream_path.name,
+                    },
                 },
                 indent=2,
             )
@@ -85,8 +107,13 @@ class Pipeline:
 
         return ProcessResult(
             image=result_image,
+            original=image,
             prompt=prompt,
             context=context,
             style_id=style_id,
-            meta={"saved_stem": str(stem)},
+            meta={
+                "saved_stem": stem,
+                "orig_path": str(orig_path),
+                "dream_path": str(dream_path),
+            },
         )
