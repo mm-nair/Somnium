@@ -101,8 +101,8 @@
       "real": true,
       "liberal": true,
       "tint": [255, 160, 60],
-      "keywords": "transparent watercolor, wet-on-wet color, selective dry brush, reserved paper highlights",
-      "prompt": "Repaint the supplied photo as a loose, luminous watercolor on warm cotton paper. Build volume with transparent overlapping washes and let adjacent colors mingle naturally in wet areas. Use a few dry-brush accents and sharper edges around the main subjects, with softer lost edges in the existing background. Show gentle pigment granulation in pooled color and preserve clean paper for highlights; leave enough unpainted breathing room that the image feels brushed rather than airbrushed. Keep the source colors recognizable, with nuanced warm and cool mixtures in the shadows. Preserve individual features and expressions through economical brushwork, keeping the original subjects, object count, poses, camera angle, crop, and background arrangement. Lighting finish only: {context}."
+      "keywords": "watercolor painted from scratch, blended wet-on-wet washes, visible brushstrokes and dabs, pigment granulation and speckles, soft bleeding edges",
+      "prompt": "Paint the scene from scratch in watercolor using the supplied photo as a reference, not as a photograph with a watercolor filter or texture overlay. Construct every subject and background form from visible brushstrokes, broad watery washes, irregular dabs, and small dots of deposited pigment. Let neighboring colors bleed and blend on wet cotton paper, with soft feathered edges, uneven blooms, pooled pigment, and granular speckles within the painted areas. Replace photographic microdetail and precise contours with loose brush-shaped suggestions; describe faces and objects with a few expressive marks rather than tracing them. Leave broken dry-brush strokes and paper gaps visible, with only occasional firmer accents. Keep colors recognizable with richer warm and cool mixtures. Preserve likeness, expressions, subjects, object count, poses, camera angle, crop, and background arrangement through the overall painted shapes. Use moderate artistic looseness, with blending and brushwork visible at small size. Lighting finish only: {context}."
     },
     {
       "id": "anime",
@@ -120,33 +120,35 @@
       "real": true,
       "liberal": true,
       "tint": [120, 220, 180],
-      "keywords": "randomized visual treatment, coherent palette, deliberate focal hierarchy",
-      "prompt": "Restyle the supplied photo with this already selected visual treatment: {variation}. Commit to that treatment across the entire image, expressing texture through its actual medium and using the selected palette as a coherent color relationship. Apply the focus choice through edge sharpness and detail distribution within the existing composition. For film treatments, retain photographic faces, materials, and optical depth; for handmade treatments, rebuild the same forms with the chosen marks or materials. Preserve individual likeness, expressions, and recognizable object shapes. Keep the original subjects, object count, poses, camera angle, crop, and background arrangement; fill the frame without added borders or decoration. The selected treatment and palette take priority over the lighting finish: {context}.",
+      "keywords": "unhinged one-shot transformation, impossible materials, broken scale, violent color",
+      "prompt": "Detonate the supplied photo into this already chosen vision and do not pull it back: {variation}. Commit the whole frame. The same people stay recognizable, in the same pose, and then materials, scale, gravity, and the room are allowed to go too far. The palette is the world, not a tint. The focus choice decides what stays razor sharp and what becomes the storm. Do not make it tasteful, balanced, vintage, or politely photographic unless the treatment itself is a photograph pushed past sanity. No borders, lettering, or logos. Lighting is only a spark inside the vision: {context}.",
       "variations": {
         "treatment": [
-          "35mm color-negative photograph with fine organic grain and smooth highlight roll-off",
-          "color slide-film photograph with luminous saturated colors and crisp tonal separation",
-          "instant-film photograph with creamy highlights and soft color transitions, filling the original frame",
-          "cross-processed color photograph with unusual shadow-to-highlight color separation",
-          "cinematic photograph with gentle halation around existing bright lights and textured midtones",
-          "layered cut-paper collage with overlapping paper shapes and small cast shadows",
-          "impasto oil painting with thick directional brushstrokes and ridges of paint",
-          "color woodblock print with carved contours, flat ink areas, and visible wood grain",
-          "soft pastel drawing with velvety color fields and broken chalk edges",
-          "stained-glass mosaic with translucent colored pieces and dark leading following existing forms"
+          "the people cast in liquid chrome that is still pouring, the room folded into a warped mercury mirror, highlights tearing into white sparks",
+          "a woodblock print struck by lightning: carved black contours, flat impossible inks, and the paper splitting into glowing cracks",
+          "a bioluminescent deep-sea cathedral, subjects armored in iridescent chitin and glass, the room flooded with black water and drifting light",
+          "a dead-mall sun-god poster: marble, laser grids, scanlines, and a melting sunset burning inside the room",
+          "a sumi-e detonation, the body drawn in one violent brushstroke that explodes into ink crows and gold leaf",
+          "stained glass in a rave, thick lead lines following the face, colored light blasting through the body onto the floor",
+          "a gravitational portrait, the face stretched by lensing, skin full of stars, the background bending into a ring of light",
+          "a giant paper theater on fire, layered cut silhouettes, embers, and the same pose repeated as a burning shadow",
+          "an oil-slick soap-bubble world, every surface a thin film of rainbow petroleum, the subject monumental and the scale wrong",
+          "a baroque fever dream of velvet and too many jewels, a sky that is an open mouth of clouds, the person still unmistakably themselves",
+          "stone idols cracking open, galaxies leaking from the fractures, dust and gold hanging in the air",
+          "a bullet-time flower bomb, petals, chrome, and storm light frozen around the exact same pose"
         ],
         "palette": [
-          "amber highlights and teal shadows",
-          "rose highlights and indigo shadows",
-          "buttery yellow highlights and muted olive shadows",
-          "peach highlights and lavender shadows",
-          "ivory highlights and cobalt shadows with restrained vermilion accents",
-          "mint highlights and plum shadows"
+          "molten gold against void black, with one electric magenta scar",
+          "toxic mint, hot magenta, and wet asphalt black",
+          "blood orange, cobalt, and blown-out white",
+          "ultraviolet and acid yellow on bruised plum",
+          "chrome silver, warning-stripe yellow, and deep-sea green",
+          "candlelight amber drowning in neon cyan"
         ],
         "focus": [
-          "concentrate fine detail on the main subject, with softly simplified background edges",
-          "keep foreground and background clearly defined with detail throughout",
-          "emphasize the existing foreground subject through crisp edges and stronger local contrast"
+          "the face is razor sharp and the rest of the frame is a storm",
+          "everything is equally loud, with no quiet background",
+          "the eyes and hands stay tiny and perfect while the world smears into motion"
         ]
       }
     },
@@ -161,7 +163,7 @@
       "prompt": "Redraw the supplied photo as an expressive full-color colored-pencil sketch on ivory drawing paper. Build forms with fine directional strokes that follow their surfaces, layered colored hatching, and changes in pencil pressure. Choose pencil colors from the source image and deepen shadows with complementary colored layers so they stay chromatic. Let paper tooth show between strokes, reserve bare paper for highlights, and use a few softly burnished passages for smooth surfaces. Concentrate precise marks around the main subjects and use broader, looser strokes in the existing background. Preserve individual likeness, expressions, and recognizable object shapes without tracing every edge equally. Keep the original subjects, object count, poses, camera angle, crop, and background arrangement. Lighting finish only: {context}."
     }
   ],
-  "prompt_system": "Write one image-edit prompt for Grok Imagine from the supplied draft. Refine its language without inventing creative content. Use roughly 100 to 160 words when needed to retain the medium-specific details; do not pad short drafts.\nLead with the transformation of the supplied photograph. Spend most of the prompt on the selected medium, mark-making, material rendering, color relationships, and focal hierarchy. Describe physical qualities directly rather than generic quality adjectives.\nPreserve the draft's distinctive treatment. For surprise, retain the already selected treatment, palette, and focus as one coherent result. Keep photographic treatments photographic and illustrated treatments faithful to their stated medium.\nYou cannot see the photograph. Refer to its existing subjects and surroundings without naming or imagining unseen objects. Preserve likeness, expressions, object count, poses, camera angle, crop, and background arrangement.\nThe lighting finish is secondary. Combine its cues into at most one short sentence about exposure, color temperature, shadow softness, or reflected light on existing surfaces. Keep the original light direction, source materials, and chosen palette. If a cue conflicts with the style or scene, soften or omit it.\nExpress lighting through the selected medium. Keep interiors as interiors and preserve the existing sky or ceiling as part of the same setting. All changes affect rendering of existing content; add no objects, scenery, symbols, decorative overlays, or lettering.\nRemove repeated instructions and negative keyword lists. Output only the finished edit prompt.",
+  "prompt_system": "Write one image-edit prompt for Grok Imagine from the supplied draft. For every style except surprise, refine its language without inventing creative content. Use roughly 100 to 160 words for those styles. For surprise, use up to 220 words if the treatment needs it, and do not tame, shorten, or make it tasteful. Do not pad short drafts.\nLead with the transformation of the supplied photograph. Spend most of the prompt on the selected medium, mark-making, material rendering, color relationships, and focal hierarchy. Describe physical qualities directly rather than generic quality adjectives.\nPreserve the draft's distinctive treatment. For surprise, keep the selected treatment, palette, and focus and push them harder: impossible materials, broken scale, and a setting rewritten by that treatment are required. For every other style, keep photographic treatments photographic and illustrated treatments faithful to their stated medium.\nYou cannot see the photograph. For styles other than surprise, refer to its existing subjects and surroundings without naming or imagining unseen objects, and preserve likeness, expressions, object count, poses, camera angle, crop, and background arrangement. For surprise, keep the people recognizable and in the same pose, and let the treatment rewrite materials, scale, and the room.\nThe lighting finish is secondary. Combine its cues into at most one short sentence about exposure, color temperature, shadow softness, or reflected light on existing surfaces. For styles other than surprise, keep the original light direction and source materials, and if a cue conflicts with the style or scene, soften or omit it. For surprise, the treatment's materials and palette win over the original light.\nFor styles other than surprise, express lighting through the selected medium, keep interiors as interiors, preserve the existing sky or ceiling, and change only the rendering of existing content. Add no objects, scenery, symbols, decorative overlays, or lettering. Surprise may add the objects and scenery named by its selected treatment, and still no lettering.\nRemove repeated instructions and negative keyword lists. Output only the finished edit prompt.",
   "models": {
     "prompt_provider": "openai_compat",
     "image_provider": "xai",

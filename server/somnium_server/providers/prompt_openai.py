@@ -31,15 +31,25 @@ class OpenAICompatPromptProvider:
             style_id=style_id, style=style, context=context, prompt_cfg=prompt_cfg
         )
         liberal = bool(style.get("liberal"))
-        strength = (
-            "LIBERAL stylization allowed for this style: fully commit to the selected "
-            "medium and its treatment of existing faces and materials. "
-            "Still same crop — no new background scene, no readable text."
-            if liberal
-            else "Keep the source rendering and apply the specified finish."
-        )
+        if style_id == "surprise":
+            strength = (
+                "SURPRISE: do not tame this a ton. Keep the selected treatment, palette, and "
+                "focus, and push them further. Impossible materials, broken scale, and "
+                "a room rewritten by the treatment are the point. The same people stay "
+                "recognizable, in the same pose. No readable text."
+            )
+        elif liberal:
+            strength = (
+                "LIBERAL stylization allowed for this style: fully commit to the selected "
+                "medium and its treatment of existing faces and materials. "
+                "Still same crop — no new background scene, no readable text."
+            )
+        else:
+            strength = "Keep the source rendering and apply the specified finish."
         temp = prompt_cfg.get("temperature", 0.45)
-        if liberal:
+        if style_id == "surprise":
+            temp = max(0.95, float(temp))
+        elif liberal:
             temp = min(0.75, float(temp) + 0.15)
         body = {
             "model": prompt_cfg.get("model", "gpt-4o-mini"),

@@ -95,6 +95,8 @@ class Pipeline:
             image_cfg = dict(self.cfg.get("image") or {})
             if style.get("liberal"):
                 image_cfg["liberal"] = True
+            if style_id == "surprise":
+                image_cfg["wild"] = True
             result_image = self.stack["image"].transform(
                 image=image,
                 prompt=prompt,

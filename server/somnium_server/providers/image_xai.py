@@ -20,6 +20,14 @@ _FILTER_GUARD = (
     "Do not add any readable text, logos, captions, or watermarks. "
 )
 
+# Surprise only. The other liberal styles stay on _LIBERAL_GUARD.
+_SURPRISE_GUARD = (
+    "Push this treatment as far as it can go. The same people stay recognizable, "
+    "in the same pose, but materials, scale, light, and the room become the vision. "
+    "Do not soften it into a tasteful filter or a polite photograph. "
+    "No readable text, logos, captions, or watermarks. "
+)
+
 # Liberal styles (e.g. anime): stronger stylization, still same crop.
 _LIBERAL_GUARD = (
     "Fully realize the requested medium, including photographic treatments. Keep the same crop "
@@ -73,7 +81,12 @@ class XaiImageProvider:
             "model", "grok-imagine-image-2.0"
         )
         b64 = base64.b64encode(image).decode()
-        guard = _LIBERAL_GUARD if image_cfg.get("liberal") else _FILTER_GUARD
+        if image_cfg.get("wild"):
+            guard = _SURPRISE_GUARD
+        elif image_cfg.get("liberal"):
+            guard = _LIBERAL_GUARD
+        else:
+            guard = _FILTER_GUARD
         full_prompt = prompt.strip() + "\n\n" + guard
 
         body: dict[str, Any] = {
