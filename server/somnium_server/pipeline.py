@@ -51,6 +51,8 @@ class Pipeline:
         lat: float | None = None,
         lon: float | None = None,
         force_real: bool = False,
+        source: str | None = None,
+        skip_gallery: bool = False,
     ) -> ProcessResult:
         styles = self.cfg.get("styles") or {}
         if style_id not in styles:
@@ -129,6 +131,7 @@ class Pipeline:
                     "prompt": prompt,
                     "context": context,
                     "taken_at": taken_at or context.get("taken_at"),
+                    "source": source,
                     "files": {
                         "orig": orig_path.name,
                         "dream": dream_path.name,
@@ -138,12 +141,16 @@ class Pipeline:
             )
         )
         # Optional gallery upload. Must not delay or fail the shot.
-        _start_gallery_upload(
-            orig_path=orig_path,
-            dream_path=dream_path,
-            meta_path=meta_path,
-            stem=stem,
-        )
+        # The camera sends skip_gallery when it will POST the pair itself.
+        if skip_gallery:
+            logger.info("Gallery upload left to the camera for %s", stem)
+        else:
+            _start_gallery_upload(
+                orig_path=orig_path,
+                dream_path=dream_path,
+                meta_path=meta_path,
+                stem=stem,
+            )
 
         return ProcessResult(
             image=result_image,

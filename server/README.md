@@ -1,8 +1,18 @@
 # Somnium server
 
 Laptop FastAPI brain for Project Somnium. The image server runs on NixOS, inside
-this repo's Python flake. The repo [README](../README.md) covers flashing, the
-USB bridge, and creative config.
+this repo's Python flake. The repo [README](../README.md) covers flashing, Wi-Fi,
+the USB bridge, and creative config.
+
+A camera on the same 2.4 GHz LAN POSTs `multipart/form-data` to
+`/v1/process` and reads the dream JPEG back. `./scripts/server.sh` binds
+`0.0.0.0:8080` and advertises `somnium.local` (mDNS A record plus
+`_somnium._tcp`). `SOMNIUM_MDNS=0` turns advertising off.
+`SOMNIUM_ADVERTISE_IP` pins the address in the A record when the outbound-route
+guess is wrong. The USB bridge still posts to `127.0.0.1`.
+
+`source=wifi` is stored on the shot JSON. `skip_gallery=1` skips the laptop
+gallery hook so a camera that has its own bearer token does not upload twice.
 
 Saved shots go to `server/outputs/`. `output_dir` in
 [`settings.json`](settings.json) is `outputs`, and the pipeline resolves that

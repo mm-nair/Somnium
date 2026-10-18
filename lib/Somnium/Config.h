@@ -47,6 +47,8 @@ constexpr int kCameraWidth = 320;
 constexpr bool kCameraMirrorHorizontal = true;
 constexpr int kJpegQuality = 70;
 constexpr unsigned long kButtonDebounceMs = 25;
+// Shutter held together with the dial opens the Wi-Fi setup portal.
+constexpr unsigned long kPortalHoldMs = 1500;
 // Must exceed usb_bridge/xAI --timeout (240s) plus USB reconnect slack.
 constexpr uint32_t kCookTimeoutMs = 300000;
 

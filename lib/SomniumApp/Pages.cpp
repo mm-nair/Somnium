@@ -3,6 +3,7 @@
 #include <Config.h>
 #include <Console.h>
 #include <Image.h>
+#include <LinkStatus.h>
 #include <Ui.h>
 #include <esp_heap_caps.h>
 #include <math.h>
@@ -158,7 +159,7 @@ bool ModePage::handleAction(Somnium::Ui::NavAction action) {
 void ModePage::drawHeaderOnly(Somnium::Ui::Canvas &c) {
   char when[32];
   Chrono::formatDateTime(when, sizeof(when));
-  Brand::drawHeader(c, T(), "Storage", true, when);
+  Brand::drawHeader(c, T(), "Storage", Somnium::LinkStatus::label(), when);
 }
 
 void ModePage::drawPanel(Somnium::Ui::Canvas &c, int modeIndex, float slot,
@@ -268,7 +269,7 @@ void ProcessPage::update(uint32_t dtMs) {
 
 void ProcessPage::draw(Somnium::Ui::Canvas &c) {
   c.clear(T().bg);
-  Text::drawIn(c, "cam > usb > dream", Rect(0, 40, c.width(), 14),
+  Text::drawIn(c, "cam > cook > dream", Rect(0, 40, c.width(), 14),
                mutedCenter());
 
   // Same L→R order as Boot: fire · salt · whisk (no progress bar).

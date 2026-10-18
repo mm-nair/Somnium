@@ -267,6 +267,32 @@ class GalleryUploadTests(unittest.TestCase):
                 self.assertEqual(Path(result.meta["dream_path"]).read_bytes(), DREAM)
         self.assertEqual(self.server.requests, [])
 
+    def test_skip_gallery_leaves_the_upload_to_the_camera(self):
+        pipe = self._pipeline()
+        with patch.dict(
+            os.environ,
+            {"SOMNIUM_UPLOAD_URL": self.url, "SOMNIUM_UPLOAD_TOKEN": TOKEN},
+        ), patch("somnium_server.pipeline.threading.Thread") as thread, self.assertLogs(
+            "uvicorn.error", level="INFO"
+        ) as captured:
+            result = pipe.process(
+                image=ORIG,
+                style_id="cartoon",
+                taken_at="2026-10-17T19:30:00Z",
+                client_ip="127.0.0.1",
+                source="wifi",
+                skip_gallery=True,
+            )
+        thread.assert_not_called()
+        self.assertEqual(result.image, DREAM)
+        meta = json.loads(
+            Path(result.meta["orig_path"]).with_name(f"{result.meta['saved_stem']}.json").read_text()
+        )
+        self.assertEqual(meta["source"], "wifi")
+        self.assertIn("left to the camera", "\n".join(captured.output))
+        self.assertNotIn(TOKEN, "\n".join(captured.output))
+        self.assertEqual(self.server.requests, [])
+
 
 if __name__ == "__main__":
     unittest.main()

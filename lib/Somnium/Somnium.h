@@ -8,6 +8,7 @@
 #include "Image.h"
 #include "Inputs.h"
 #include "Storage.h"
+#include "Transport.h"
 
 namespace Somnium {
 
@@ -21,6 +22,7 @@ inline bool begin() {
   Console::println("storage");
   const bool cameraOk = Camera::begin(Defaults::kCameraWidth);
   Console::println(cameraOk ? "camera ok" : "camera fail");
+  Transport::begin();
   Console::println("READY usb-cook");
   return cameraOk;
 }

@@ -17,8 +17,9 @@ fi
 
 export PYTHONPATH="$ROOT/server${PYTHONPATH:+:$PYTHONPATH}"
 
-echo "Somnium server on http://127.0.0.1:8080"
-echo "  Run ./scripts/usb_bridge.sh in another terminal (ESP cooks over USB)."
+echo "Somnium server on http://0.0.0.0:8080  (mDNS somnium.local)"
+echo "  Wi-Fi cameras POST /v1/process directly. USB bridge is the fallback."
+echo "  SOMNIUM_MDNS=0 skips advertising. SOMNIUM_ADVERTISE_IP overrides the A record."
 echo "  providers: xAI prompt + xAI image + Open-Meteo context"
 
 exec python -m somnium_server.app

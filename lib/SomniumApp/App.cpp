@@ -7,6 +7,7 @@
 #include <Image.h>
 #include <Inputs.h>
 #include <Storage.h>
+#include <Transport.h>
 #include <Ui.h>
 #include <string.h>
 
@@ -28,6 +29,9 @@ bool gCameraOk = false;
 bool gAwaitProcessWork = false;
 bool gProcessHolding = false;  // error state — wait for dial-click
 bool gIgnoreNextEncRelease = false;
+bool gSuppressShutterRelease = false;
+unsigned long gPortalHoldSince = 0;
+bool gPortalLatched = false;
 int gShotCount = 0;
 uint8_t *gResultJpeg = nullptr;
 size_t gResultLen = 0;
@@ -257,11 +261,17 @@ void pumpCookUi() {
   yield();
 }
 
+void onCookStatus(const char *status) {
+  gProcess.setStatus(status);
+  pumpCookUi();
+}
+
 void failProcess(const char *status) {
   Somnium::Console::printf("ERR process %s\n", status != nullptr ? status : "?");
   gProcess.setStatus(status);
   gProcess.setFailed();
-  Somnium::Host::setPump(nullptr);
+  Somnium::Transport::setPump(nullptr);
+  Somnium::Transport::setStatus(nullptr);
   gAwaitProcessWork = false;
   gProcessHolding = true;
 }
@@ -291,7 +301,8 @@ void requestCapture() {
 }
 
 void runPipeline() {
-  Somnium::Host::setPump(pumpCookUi);
+  Somnium::Transport::setPump(pumpCookUi);
+  Somnium::Transport::setStatus(onCookStatus);
 
   if (!gCameraOk) {
     failProcess("no camera - dial back");
@@ -309,14 +320,11 @@ void runPipeline() {
   // CH340 doesn't fall off the USB bus (kernel error -71 / ACM gone).
   Somnium::Camera::end();
 
-  gProcess.setStatus("usb > thinkpad...");
-  pumpCookUi();
-
   Somnium::JpegBuffer dream{};
   String bridgeErr;
-  if (!Somnium::Host::cook(photo.data, photo.length, gMode.selected().id,
-                           nullptr, Somnium::Defaults::kVenueLat,
-                           Somnium::Defaults::kVenueLon, dream, &bridgeErr)) {
+  if (!Somnium::Transport::cook(photo.data, photo.length, gMode.selected().id,
+                                nullptr, Somnium::Defaults::kVenueLat,
+                                Somnium::Defaults::kVenueLon, dream, &bridgeErr)) {
     Somnium::Console::printf("ERR bridge %s\n", bridgeErr.c_str());
     Somnium::Image::freePhoto(photo);
     char buf[40];
@@ -325,7 +333,10 @@ void runPipeline() {
     return;
   }
 
-  Somnium::Console::printf("USB cook ok %u B\n",
+  Somnium::Console::printf("%s cook ok %u B\n",
+                           Somnium::Transport::lastPath() == Somnium::TransportKind::Wifi
+                               ? "WIFI"
+                               : "USB",
                            static_cast<unsigned>(dream.length));
   gShotCount = Somnium::Storage::nextShotNumber(gMode.selected().id,
                                               gShotCount + 1);
@@ -337,7 +348,8 @@ void runPipeline() {
   gResultJpeg = dream.data;
   gResultLen = dream.length;
   dream.data = nullptr;
-  Somnium::Host::setPump(nullptr);
+  Somnium::Transport::setPump(nullptr);
+  Somnium::Transport::setStatus(nullptr);
   // Next shutter re-inits the sensor via Camera::captureJpeg.
   showReview();
   Somnium::Console::println("UI review");
@@ -362,6 +374,11 @@ void mapInputs() {
 
       case Somnium::InputEvent::ShutterReleased:
         // Shutter is ONLY "take a picture" — never navigation.
+        // A portal combo consumes the release so it does not also shoot.
+        if (gSuppressShutterRelease) {
+          gSuppressShutterRelease = false;
+          break;
+        }
         if (gScreen == Screen::Mode || gScreen == Screen::Storage ||
             gScreen == Screen::Review) {
           requestCapture();
@@ -416,10 +433,40 @@ void Runtime::begin(bool cameraOk) {
   gScreen = Screen::Boot;
 }
 
+void watchPortalCombo() {
+  if (gScreen == Screen::Process) {
+    gPortalHoldSince = 0;
+    return;
+  }
+  const bool both =
+      Somnium::Inputs::shutterDown() && Somnium::Inputs::encoderButtonDown();
+  if (!both) {
+    gPortalHoldSince = 0;
+    gPortalLatched = false;
+    return;
+  }
+  if (gPortalLatched) {
+    return;
+  }
+  if (gPortalHoldSince == 0) {
+    gPortalHoldSince = millis();
+    return;
+  }
+  if (millis() - gPortalHoldSince < Somnium::Defaults::kPortalHoldMs) {
+    return;
+  }
+  gPortalLatched = true;
+  gSuppressShutterRelease = true;
+  gIgnoreNextEncRelease = true;
+  Somnium::Transport::requestPortal();
+  Somnium::Console::println("LINK portal");
+}
+
 void Runtime::tick() {
-  Somnium::Host::poll();
+  Somnium::Transport::poll();
   Somnium::Inputs::update();
   mapInputs();
+  watchPortalCombo();
 
   if (gScreen == Screen::Boot && gBoot.finished() &&
       !Somnium::Ui::Ui::navigator().busy()) {

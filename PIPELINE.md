@@ -1,23 +1,40 @@
 # Pipeline
 
 ```
-JPEG + style  (USB COOK from ESP)
-        │
-        ▼
- usb_bridge.py  →  POST /v1/process on localhost
-        │
-        ▼
+ shutter JPEG
+      │
+      ▼
+ Transport (Wi-Fi primary, USB fallback)
+      │
+      ├── Wi-Fi up ── POST /v1/process multipart (source=wifi)
+      │                 optional gallery POST (Bearer token, from NVS)
+      │
+      └── Wi-Fi down or HTTP failed
+                    └── USB COOK frame → usb_bridge.py → same /v1/process
+      │
+      ▼
  Context (Open-Meteo weather / day-night + local moon mood)
-        │
-        ▼
+      │
+      ▼
  Prompt (xAI chat) — short FILTER instruction
-        │
-        ▼
+      │
+      ▼
  Image (xAI /images/edits) — grade only, resized to input (320×240)
-        │
-        ▼
-  *_0_orig.jpg  +  *_1_dream.jpg
-  USB DREAM → ESP Review / Storage
+      │
+      ▼
+ *_0_orig.jpg  +  *_1_dream.jpg
+ dream JPEG → ESP Review / Storage
+```
+
+```
+ no creds ───────────────► Portal (SoftAP Somnium-Setup)
+ creds ──► Associating ──timeout──► Backoff ──timer──► Associating
+                │                       ▲
+                └── associated          │ link lost
+                       ▼                │
+                    Online ─────────────┘
+                       │
+                       └── shutter+dial 1.5s ──► Portal
 ```
 
 ## USB framing
@@ -80,11 +97,23 @@ nix develop -c pio run
 nix develop -c python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-## HTTP (laptop local)
+## HTTP (Wi-Fi camera or laptop)
 
-`POST /v1/process` multipart: `image`, `style`, `taken_at`, optional `lat`/`lon`.
+`POST /v1/process` multipart: `image`, `style`, `taken_at`, optional `lat`/`lon`,
+optional `source` (`wifi` or `usb`), optional `skip_gallery=1`.
+
+The Wi-Fi camera sends `source=wifi`. The USB bridge sends `source=usb`.
+`skip_gallery=1` means the camera will POST the orig/dream/meta trio itself
+(bearer token from NVS, never from git) and the laptop hook should not.
 
 Response: JPEG + headers `X-Somnium-Prompt`, `X-Somnium-Context`, …
+
+`GET /health` includes `mdns` (`somnium.local`) and `upload` (`/v1/process`).
+The server process advertises that name over mDNS unless `SOMNIUM_MDNS=0`.
+
+Cooks retry connection loss and HTTP 408/429/5xx with backoff. They do not
+queue a shot on the SD card. USB `COOK` / `DREAM` remains the fallback and is
+unchanged.
 
 ## Config map
 

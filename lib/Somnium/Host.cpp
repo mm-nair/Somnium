@@ -20,6 +20,7 @@ namespace {
 
 bool gCooking = false;
 Host::PumpFn gPump = nullptr;
+Host::LineFn gLineHook = nullptr;
 
 char gPollLine[96];
 size_t gPollLen = 0;
@@ -323,6 +324,8 @@ bool waitDreamHeader(unsigned requestId, unsigned &dreamLen,
 
 void Host::setPump(PumpFn fn) { gPump = fn; }
 
+void Host::setLineHook(LineFn fn) { gLineHook = fn; }
+
 void Host::poll() {
   if (gCooking) {
     return;
@@ -340,8 +343,13 @@ void Host::poll() {
     }
     gPollLine[gPollLen] = '\0';
     gPollLen = 0;
-    if (gPollLine[0] != '\0' && isKnownCommand(gPollLine)) {
+    if (gPollLine[0] == '\0') {
+      continue;
+    }
+    if (isKnownCommand(gPollLine)) {
       handleLine(gPollLine);
+    } else if (gLineHook != nullptr) {
+      gLineHook(gPollLine);
     }
   }
 }
