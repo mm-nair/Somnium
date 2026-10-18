@@ -10,9 +10,13 @@ Photos from the camera are posted at [somnium.photo](https://somnium.photo). The
 
 ## In the hand
 
-The firmware screens are Boot, Modes, Process, Review, and Storage.
+The firmware screens are Boot, Looks, Menu, Cook, Review, and Gallery.
 
-Modes is a carousel: Comic, Watercolor, Anime, Surprise, and Pencil Sketch. The card art is compiled in from `creative/previews`. The shutter takes a photo in the selected mode from any screen. Process is the wait: a flame, a salt shaker, and a whisk, redrawn while the laptop works. Review holds the edit for a few seconds. Click the dial to open Storage. Turning it there steps through saved shots and flips each pair between the raw photo and the edit, labeled `ANIME-raw` and `ANIME-mod`.
+Looks is the preset picker. The hero and the filmstrip use the style previews compiled from `creative/previews`. Surprise has no still, so it keeps its tint. Turn the dial to change looks. Click it for the menu (Gallery, Shoot, Back). The shutter takes a photo in the selected look from Looks, the menu, Review, or the Gallery.
+
+Cook is the wait, in four stages: capturing, sending, styling, receiving. A timeout or a bad dream stays on the stage that failed, with the reason, until the dial is clicked. The flame, salt shaker, and whisk keep moving during the laptop wait and stop once the dream bytes start arriving.
+
+Review shows the dream. Turn the dial to flip between the original and the dream. It returns to Looks after eight quiet seconds; flipping restarts that window. Gallery groups each shot into one plate (`COMIC #3`, not a loose JPEG). Turn to move between plates. Click flips raw and dream when both exist. Hold the dial to go back to the menu. Names on those plates come from `creative.json`.
 
 A shot is two files:
 
@@ -21,7 +25,7 @@ A shot is two files:
 /somnium/anime_3_1_dream.jpg
 ```
 
-The next shot number skips filenames already on the card, so a reboot leaves the existing pairs alone. If the SD write fails, the same pair is kept in RAM and still shows up in Storage.
+The next shot number skips filenames already on the card, so a reboot leaves the existing pairs alone. If the SD write fails, the same pair is kept in RAM and still shows up in the Gallery.
 
 ## USB serial
 
@@ -81,9 +85,9 @@ The sensor is mounted in portrait. Before the JPEG is encoded, firmware crops a 
 
 The panel decodes JPEGs with TJpg_Decoder, native RGB565, byte swap off. The camera library exports its own `jd_prepare` and `jd_decomp`, with a different struct and pixel format. Linking that decoder in produced corrupt frames. Display code stays on TJpg_Decoder, and a test reads the firmware map to confirm both symbols resolve there.
 
-A full panel is 76,800 pixels. Flushing all of them at 10 MHz was too slow for the carousel, so the canvas keeps the previous frame in PSRAM and sends the runs that changed. If that buffer cannot be allocated, it sends the whole frame. Every screen draws through that canvas, so the saved frame matches what was last shown.
+A full panel is 76,800 pixels. Flushing all of them at 10 MHz was too slow for the lookbook, so the canvas keeps the previous frame in PSRAM and sends the runs that changed. If that buffer cannot be allocated, it sends the whole frame. Every screen draws through that canvas, so the saved frame matches what was last shown.
 
-On-screen text is Adafruit GFX, ASCII. Colors, the logo, mode names, thumbnails, and prompt drafts live in `creative/`. `./scripts/sync_creative.sh` regenerates the firmware headers, including the 138×82 mode thumbnails. The Python server reads `creative.json` on startup, so a prompt edit is a server restart. A color, font, logo, or thumbnail edit is a sync, a rebuild, and a flash.
+On-screen text is Adafruit GFX, ASCII. Colors, the logo, mode names, thumbnails, and prompt drafts live in `creative/`. `./scripts/sync_creative.sh` regenerates the firmware headers, including the 138×82 mode thumbnails. `python tools/sync_creative.py --check` fails if those headers drift from `creative.json` (the firmware build runs the header half of that check). The Python server reads `creative.json` on startup, so a prompt edit is a server restart. A color, font, logo, or thumbnail edit is a sync, a rebuild, and a flash.
 
 `./scripts/ui_preview.sh` draws the same screens in a window on the laptop.
 
@@ -91,7 +95,7 @@ Code is split like this:
 
 - `lib/Somnium` — camera, USB, SD, buttons, display
 - `lib/SomniumUi` — pages, canvas, text, tweens
-- `lib/SomniumApp` — the five screens, and the generated mode and theme headers
+- `lib/SomniumApp` — the on-camera screens, and the generated mode and theme headers
 - `server/` — the FastAPI pipeline
 - `scripts/usb_bridge.py` — serial to `/v1/process`
 

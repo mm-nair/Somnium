@@ -17,26 +17,35 @@ namespace Somnium {
 namespace App {
 namespace {
 
-enum class Screen : uint8_t { Boot, Mode, Process, Review, Storage };
+enum class Screen : uint8_t { Boot, Mode, Menu, Process, Review, Storage };
 
 BootPage gBoot;
 ModePage gMode;
+MenuPage gMenu;
 ProcessPage gProcess;
 PreviewPage gPreview;
 Screen gScreen = Screen::Boot;
 bool gCameraOk = false;
 bool gAwaitProcessWork = false;
 bool gProcessHolding = false;  // error state — wait for dial-click
-bool gIgnoreNextEncRelease = false;
 int gShotCount = 0;
 uint8_t *gResultJpeg = nullptr;
 size_t gResultLen = 0;
 uint8_t *gStorageJpeg = nullptr;
 size_t gStorageLen = 0;
-char gStorageLabel[20] = "";
+char gStorageLabel[24] = "";
+uint8_t *gAltJpeg = nullptr;
+size_t gAltLen = 0;
+uint8_t *gOrigJpeg = nullptr;
+size_t gOrigLen = 0;
+constexpr uint32_t kLongPressMs = 450;
+uint32_t gEncPressedMs = 0;
 
 // In-RAM gallery so raw/mod pairs work even without an SD card.
 struct GalItem {
+  char styleId[16];
+  int shot = 0;
+  uint8_t kind = 1;
   char label[20];
   uint8_t *data = nullptr;
   size_t len = 0;
@@ -45,55 +54,86 @@ constexpr int kGalMax = 24;
 GalItem gGal[kGalMax];
 int gGalCount = 0;
 
+// One plate is a shot: the original, the dream, or both.
+struct Plate {
+  char styleId[16];
+  char label[20];
+  int shot = 0;
+  int rawIndex = -1;
+  int dreamIndex = -1;
+};
+constexpr int kPlateMax = 96;
+Plate gPlates[kPlateMax];
+int gPlateCount = 0;
+
 void freeResult() {
   free(gResultJpeg);
   gResultJpeg = nullptr;
   gResultLen = 0;
 }
 
-void freeStorageJpeg() {
-  // Storage browser may point at SD-loaded OR gallery-owned buffers.
-  // Only free if not an alias into gGal.
+void freeOwnedJpeg(uint8_t *&jpeg) {
+  if (jpeg == nullptr) {
+    return;
+  }
   bool owned = true;
   for (int i = 0; i < gGalCount; ++i) {
-    if (gStorageJpeg == gGal[i].data) {
+    if (jpeg == gGal[i].data) {
       owned = false;
       break;
     }
   }
   if (owned) {
-    Somnium::Storage::freeJpeg(gStorageJpeg);
+    Somnium::Storage::freeJpeg(jpeg);
   }
-  gStorageJpeg = nullptr;
-  gStorageLen = 0;
+  jpeg = nullptr;
 }
 
-char gLabelBuf[20] = "";
+void freeStorageJpeg() {
+  // Storage browser may point at SD-loaded OR gallery-owned buffers.
+  freeOwnedJpeg(gStorageJpeg);
+  freeOwnedJpeg(gAltJpeg);
+  gStorageLen = 0;
+  gAltLen = 0;
+}
+
+void freeOrig() {
+  free(gOrigJpeg);
+  gOrigJpeg = nullptr;
+  gOrigLen = 0;
+}
+
+char gLabelBuf[24] = "";
 char gReviewTitle[28] = "";
 
-const char *styleToken(const char *base) {
-  if (strstr(base, "noir") != nullptr) {
-    return "NOIR";
+bool parsePlateFile(const char *base, char *id, size_t idLen, int *shot, int *kind) {
+  if (base == nullptr || id == nullptr || idLen == 0 || shot == nullptr || kind == nullptr) {
+    return false;
   }
-  if (strstr(base, "cartoon") != nullptr) {
-    return "CARTOON";
+  const Mode *matched = nullptr;
+  size_t matchedLen = 0;
+  for (int i = 0; i < kModeCount; ++i) {
+    const size_t n = strlen(kModes[i].id);
+    if (strncmp(base, kModes[i].id, n) == 0 && base[n] == '_' && n > matchedLen) {
+      matched = &kModes[i];
+      matchedLen = n;
+    }
   }
-  if (strstr(base, "cyber") != nullptr) {
-    return "CYBER";
+  if (matched == nullptr) {
+    return false;
   }
-  if (strstr(base, "water") != nullptr || strstr(base, "wash") != nullptr) {
-    return "WASH";
+  int which = 0;
+  if (sscanf(base + matchedLen, "_%d_%d", shot, &which) != 2) {
+    return false;
   }
-  if (strstr(base, "gourmet") != nullptr) {
-    return "GOURMET";
-  }
-  if (strstr(base, "anime") != nullptr) {
-    return "ANIME";
-  }
-  if (strstr(base, "pencil") != nullptr) {
-    return "PENCIL";
-  }
-  return "PLATE";
+  *kind = which == 0 ? 0 : 1;
+  strncpy(id, matched->id, idLen - 1);
+  id[idLen - 1] = '\0';
+  return true;
+}
+
+void formatSideLabel(char *out, size_t outLen, const char *styleId, int kind) {
+  snprintf(out, outLen, "%s-%s", labelForId(styleId), kind == 0 ? "raw" : "mod");
 }
 
 const char *labelFromPath(const char *path) {
@@ -102,20 +142,58 @@ const char *labelFromPath(const char *path) {
   }
   const char *base = strrchr(path, '/');
   base = base != nullptr ? base + 1 : path;
-  const char *style = styleToken(base);
-  const char *kind = "plt";
-  if (strstr(base, "_0_orig") != nullptr || strstr(base, "_orig") != nullptr) {
-    kind = "raw";
-  } else if (strstr(base, "_1_dream") != nullptr ||
-             strstr(base, "_dream") != nullptr ||
-             strstr(base, "_mod") != nullptr) {
-    kind = "mod";
+  char id[16];
+  int shot = 0;
+  int kind = 1;
+  if (!parsePlateFile(base, id, sizeof(id), &shot, &kind)) {
+    snprintf(gLabelBuf, sizeof(gLabelBuf), "PLATE");
+    return gLabelBuf;
   }
-  snprintf(gLabelBuf, sizeof(gLabelBuf), "%s-%s", style, kind);
+  formatSideLabel(gLabelBuf, sizeof(gLabelBuf), id, kind);
   return gLabelBuf;
 }
 
-bool galPush(const char *label, const uint8_t *data, size_t len) {
+const char *friendlyCookError(const char *err) {
+  if (err == nullptr || err[0] == '\0') {
+    return "cook failed";
+  }
+  if (strcmp(err, "bridge timeout") == 0) {
+    return "timed out - no reply";
+  }
+  if (strcmp(err, "dream crc mismatch") == 0) {
+    return "checksum failed";
+  }
+  if (strcmp(err, "dream short") == 0) {
+    return "dream cut off";
+  }
+  if (strcmp(err, "dream trailer") == 0) {
+    return "trailer missing";
+  }
+  if (strcmp(err, "bad jpeg") == 0) {
+    return "not a jpeg";
+  }
+  if (strcmp(err, "oom dream") == 0) {
+    return "out of memory";
+  }
+  if (strcmp(err, "empty") == 0) {
+    return "empty photo";
+  }
+  if (strcmp(err, "dream length") == 0) {
+    return "dream too large";
+  }
+  if (strcmp(err, "bridge protocol mismatch") == 0) {
+    return "protocol mismatch";
+  }
+  if (strcmp(err, "no camera - dial back") == 0) {
+    return "camera not ready";
+  }
+  if (strcmp(err, "capture fail - dial back") == 0) {
+    return "capture failed";
+  }
+  return err;
+}
+
+bool galPush(const char *styleId, int shot, int kind, const uint8_t *data, size_t len) {
   if (data == nullptr || len == 0) {
     return false;
   }
@@ -134,11 +212,14 @@ bool galPush(const char *label, const uint8_t *data, size_t len) {
     gGalCount = kGalMax - 1;
     gGal[gGalCount] = GalItem{};
   }
-  strncpy(gGal[gGalCount].label, label != nullptr ? label : "PLATE",
-          sizeof(gGal[gGalCount].label) - 1);
-  gGal[gGalCount].label[sizeof(gGal[gGalCount].label) - 1] = '\0';
-  gGal[gGalCount].data = copy;
-  gGal[gGalCount].len = len;
+  GalItem &item = gGal[gGalCount];
+  strncpy(item.styleId, styleId != nullptr ? styleId : "", sizeof(item.styleId) - 1);
+  item.styleId[sizeof(item.styleId) - 1] = '\0';
+  item.shot = shot;
+  item.kind = kind == 0 ? 0 : 1;
+  formatSideLabel(item.label, sizeof(item.label), item.styleId, item.kind);
+  item.data = copy;
+  item.len = len;
   gGalCount += 1;
   return true;
 }
@@ -146,10 +227,8 @@ bool galPush(const char *label, const uint8_t *data, size_t len) {
 void savePair(const char *styleId, int shot, const uint8_t *orig, size_t origLen,
               const uint8_t *dream, size_t dreamLen) {
   char path[72];
-  char label[20];
 
   if (orig != nullptr && origLen > 0) {
-    snprintf(label, sizeof(label), "%s-raw", styleToken(styleId));
     bool saved = false;
     if (Somnium::Storage::ready()) {
       snprintf(path, sizeof(path), "/somnium/%s_%d_0_orig.jpg", styleId, shot);
@@ -158,12 +237,11 @@ void savePair(const char *styleId, int shot, const uint8_t *orig, size_t origLen
         Somnium::Console::printf("ERR SD save %s\n", path);
       }
     }
-    if (!saved && !galPush(label, orig, origLen)) {
+    if (!saved && !galPush(styleId, shot, 0, orig, origLen)) {
       Somnium::Console::println("ERR gallery original not saved");
     }
   }
   if (dream != nullptr && dreamLen > 0) {
-    snprintf(label, sizeof(label), "%s-mod", styleToken(styleId));
     bool saved = false;
     if (Somnium::Storage::ready()) {
       snprintf(path, sizeof(path), "/somnium/%s_%d_1_dream.jpg", styleId, shot);
@@ -172,7 +250,7 @@ void savePair(const char *styleId, int shot, const uint8_t *orig, size_t origLen
         Somnium::Console::printf("ERR SD save %s\n", path);
       }
     }
-    if (!saved && !galPush(label, dream, dreamLen)) {
+    if (!saved && !galPush(styleId, shot, 1, dream, dreamLen)) {
       Somnium::Console::println("ERR gallery dream not saved");
     }
   }
@@ -225,6 +303,123 @@ bool loadStorageIndex(int index0) {
   return true;
 }
 
+bool describeBrowse(int index, char *id, size_t idLen, int *shot, int *kind) {
+  const int saved = Somnium::Storage::photoCount();
+  if (index < 0 || index >= browseCount()) {
+    return false;
+  }
+  if (index >= saved) {
+    const GalItem &item = gGal[index - saved];
+    if (item.styleId[0] == '\0') {
+      return false;
+    }
+    strncpy(id, item.styleId, idLen - 1);
+    id[idLen - 1] = '\0';
+    *shot = item.shot;
+    *kind = item.kind;
+    return true;
+  }
+  char path[64];
+  if (!Somnium::Storage::photoPathAt(index, path, sizeof(path))) {
+    return false;
+  }
+  const char *base = strrchr(path, '/');
+  base = base != nullptr ? base + 1 : path;
+  return parsePlateFile(base, id, idLen, shot, kind);
+}
+
+void rebuildPlates() {
+  gPlateCount = 0;
+  const int n = browseCount();
+  for (int i = 0; i < n && gPlateCount < kPlateMax; ++i) {
+    char id[16];
+    int shot = 0;
+    int kind = 1;
+    if (!describeBrowse(i, id, sizeof(id), &shot, &kind)) {
+      Plate &plate = gPlates[gPlateCount];
+      plate = Plate{};
+      strncpy(plate.label, "PLATE", sizeof(plate.label) - 1);
+      plate.shot = i + 1;
+      plate.rawIndex = -1;
+      plate.dreamIndex = i;
+      gPlateCount += 1;
+      continue;
+    }
+    Plate *plate = nullptr;
+    for (int p = 0; p < gPlateCount; ++p) {
+      if (gPlates[p].shot == shot && strcmp(gPlates[p].styleId, id) == 0) {
+        plate = &gPlates[p];
+        break;
+      }
+    }
+    if (plate == nullptr) {
+      plate = &gPlates[gPlateCount];
+      *plate = Plate{};
+      strncpy(plate->styleId, id, sizeof(plate->styleId) - 1);
+      plate->styleId[sizeof(plate->styleId) - 1] = '\0';
+      strncpy(plate->label, labelForId(id), sizeof(plate->label) - 1);
+      plate->label[sizeof(plate->label) - 1] = '\0';
+      plate->shot = shot;
+      plate->rawIndex = -1;
+      plate->dreamIndex = -1;
+      gPlateCount += 1;
+    }
+    if (kind == 0) {
+      plate->rawIndex = i;
+    } else {
+      plate->dreamIndex = i;
+    }
+  }
+}
+
+bool takeBrowse(int index, uint8_t **out, size_t *len) {
+  if (out == nullptr || len == nullptr || index < 0) {
+    return false;
+  }
+  const int saved = Somnium::Storage::photoCount();
+  if (index >= saved) {
+    const int galleryIndex = index - saved;
+    if (galleryIndex < 0 || galleryIndex >= gGalCount) {
+      return false;
+    }
+    *out = gGal[galleryIndex].data;
+    *len = gGal[galleryIndex].len;
+    return true;
+  }
+  char path[64];
+  if (!Somnium::Storage::photoPathAt(index, path, sizeof(path))) {
+    return false;
+  }
+  return Somnium::Storage::loadJpeg(path, out, len);
+}
+
+bool loadPlate(int plateIndex, bool preferRaw) {
+  freeStorageJpeg();
+  gStorageLabel[0] = '\0';
+  if (plateIndex < 0 || plateIndex >= gPlateCount) {
+    gPreview.setPhoto(nullptr, 0);
+    gPreview.setMeta("", 0, gPlateCount);
+    return false;
+  }
+  const Plate &plate = gPlates[plateIndex];
+  if (plate.dreamIndex >= 0) {
+    takeBrowse(plate.dreamIndex, &gStorageJpeg, &gStorageLen);
+  }
+  if (plate.rawIndex >= 0) {
+    takeBrowse(plate.rawIndex, &gAltJpeg, &gAltLen);
+  }
+  const bool showRaw = preferRaw && gAltJpeg != nullptr && gAltLen > 0;
+  if (plate.shot > 0 && plate.label[0] != '\0') {
+    snprintf(gStorageLabel, sizeof(gStorageLabel), "%s #%d", plate.label, plate.shot);
+  } else {
+    strncpy(gStorageLabel, plate.label, sizeof(gStorageLabel) - 1);
+    gStorageLabel[sizeof(gStorageLabel) - 1] = '\0';
+  }
+  gPreview.setPair(gStorageJpeg, gStorageLen, gAltJpeg, gAltLen, showRaw);
+  gPreview.setMeta(gStorageLabel, plateIndex + 1, gPlateCount);
+  return gStorageJpeg != nullptr || gAltJpeg != nullptr;
+}
+
 void showMode() {
   gScreen = Screen::Mode;
   gAwaitProcessWork = false;
@@ -233,9 +428,17 @@ void showMode() {
   Somnium::Ui::Ui::replace(&gMode, Somnium::Ui::Transition::None);
 }
 
+void showMenu() {
+  rebuildPlates();
+  gMenu.setContext(gMode.selected().label, gPlateCount);
+  gScreen = Screen::Menu;
+  Somnium::Ui::Ui::replace(&gMenu, Somnium::Ui::Transition::None);
+}
+
 void showProcess() {
   gProcess.setModeLabel(gMode.selected().label);
-  gProcess.setStatus("warming up...");
+  gProcess.setStage(ProcessPage::CookStage::Capture);
+  gProcess.setStatus("capturing the frame");
   gProcess.clearFailed();
   gScreen = Screen::Process;
   gAwaitProcessWork = true;
@@ -244,9 +447,9 @@ void showProcess() {
 }
 
 void showReview() {
-  snprintf(gReviewTitle, sizeof(gReviewTitle), "%s - dream",
-           gMode.selected().label);
+  snprintf(gReviewTitle, sizeof(gReviewTitle), "%s", gMode.selected().label);
   gPreview.beginReview(gReviewTitle, gResultJpeg, gResultLen);
+  gPreview.setAlternate(gOrigJpeg, gOrigLen);
   gScreen = Screen::Review;
   Somnium::Ui::Ui::replace(&gPreview, Somnium::Ui::Transition::None);
 }
@@ -257,21 +460,49 @@ void pumpCookUi() {
   yield();
 }
 
+void onCookStage(const char *stage) {
+  if (stage == nullptr) {
+    return;
+  }
+  if (strcmp(stage, "send") == 0) {
+    gProcess.setStage(ProcessPage::CookStage::Send);
+    gProcess.setStatus("sending over USB");
+  } else if (strcmp(stage, "style") == 0) {
+    gProcess.setStage(ProcessPage::CookStage::Style);
+    gProcess.setStatus("styling on the laptop");
+  } else if (strcmp(stage, "receive") == 0) {
+    gProcess.setStage(ProcessPage::CookStage::Receive);
+    gProcess.setStatus("receiving the dream");
+  } else {
+    return;
+  }
+  // One frame for the new stage. The style wait keeps pumping on its own
+  // cadence; this does not run while JPEG bytes are on the wire.
+  pumpCookUi();
+}
+
 void failProcess(const char *status) {
   Somnium::Console::printf("ERR process %s\n", status != nullptr ? status : "?");
-  gProcess.setStatus(status);
+  gProcess.setStatus(friendlyCookError(status));
   gProcess.setFailed();
   Somnium::Host::setPump(nullptr);
+  Somnium::Host::setProgress(nullptr);
   gAwaitProcessWork = false;
   gProcessHolding = true;
 }
 
 void showStorage() {
   freeStorageJpeg();
-  const int n = browseCount();
+  rebuildPlates();
+  const int n = gPlateCount;
   const int start = n > 0 ? n - 1 : 0;
   gPreview.beginStorage(start, n);
-  loadStorageIndex(start);
+  if (n > 0) {
+    loadPlate(start, false);
+  } else {
+    gPreview.setPhoto(nullptr, 0);
+    gPreview.setMeta("", 0, 0);
+  }
   gScreen = Screen::Storage;
   Somnium::Ui::Ui::replace(&gPreview, Somnium::Ui::Transition::None);
 }
@@ -283,6 +514,7 @@ void requestCapture() {
   }
   if (gScreen == Screen::Review) {
     freeResult();
+    freeOrig();
   }
   if (gScreen == Screen::Process) {
     return;  // already cooking
@@ -290,15 +522,78 @@ void requestCapture() {
   showProcess();
 }
 
+bool retainCopy(const uint8_t *src, size_t len) {
+  freeOrig();
+  if (src == nullptr || len == 0) {
+    return false;
+  }
+  gOrigJpeg = static_cast<uint8_t *>(ps_malloc(len));
+  if (gOrigJpeg == nullptr) {
+    gOrigJpeg = static_cast<uint8_t *>(malloc(len));
+  }
+  if (gOrigJpeg == nullptr) {
+    return false;
+  }
+  memcpy(gOrigJpeg, src, len);
+  gOrigLen = len;
+  return true;
+}
+
+void leaveReview() {
+  freeResult();
+  freeOrig();
+  showMode();
+}
+
+void onDial(bool held) {
+  if (gScreen == Screen::Mode) {
+    showMenu();
+    return;
+  }
+  if (gScreen == Screen::Menu) {
+    if (held) {
+      showMode();
+      return;
+    }
+    if (gMenu.selected() == MenuPage::kGallery) {
+      showStorage();
+    } else if (gMenu.selected() == MenuPage::kShoot) {
+      requestCapture();
+    } else {
+      showMode();
+    }
+    return;
+  }
+  if (gScreen == Screen::Review) {
+    leaveReview();
+    return;
+  }
+  if (gScreen == Screen::Process && gProcessHolding) {
+    showMode();
+    return;
+  }
+  if (gScreen == Screen::Storage) {
+    // Short click flips the plate when both sides exist. Otherwise, and on a
+    // hold, return to the menu. flip() is not called on a hold.
+    if (!held && gPreview.flip()) {
+      return;
+    }
+    freeStorageJpeg();
+    showMenu();
+  }
+}
+
 void runPipeline() {
   Somnium::Host::setPump(pumpCookUi);
+  Somnium::Host::setProgress(onCookStage);
 
   if (!gCameraOk) {
     failProcess("no camera - dial back");
     return;
   }
 
-  gProcess.setStatus("snap...");
+  gProcess.setStage(ProcessPage::CookStage::Capture);
+  gProcess.setStatus("capturing the frame");
   pumpCookUi();
   Somnium::JpegBuffer photo;
   if (!Somnium::Image::takePhoto(photo)) {
@@ -309,9 +604,6 @@ void runPipeline() {
   // CH340 doesn't fall off the USB bus (kernel error -71 / ACM gone).
   Somnium::Camera::end();
 
-  gProcess.setStatus("usb > thinkpad...");
-  pumpCookUi();
-
   Somnium::JpegBuffer dream{};
   String bridgeErr;
   if (!Somnium::Host::cook(photo.data, photo.length, gMode.selected().id,
@@ -319,7 +611,7 @@ void runPipeline() {
                            Somnium::Defaults::kVenueLon, dream, &bridgeErr)) {
     Somnium::Console::printf("ERR bridge %s\n", bridgeErr.c_str());
     Somnium::Image::freePhoto(photo);
-    char buf[40];
+    char buf[48];
     snprintf(buf, sizeof(buf), "%s", bridgeErr.c_str());
     failProcess(buf);
     return;
@@ -331,6 +623,7 @@ void runPipeline() {
                                               gShotCount + 1);
   savePair(gMode.selected().id, gShotCount, photo.data, photo.length,
            dream.data, dream.length);
+  retainCopy(photo.data, photo.length);
   Somnium::Image::freePhoto(photo);
 
   freeResult();
@@ -338,6 +631,7 @@ void runPipeline() {
   gResultLen = dream.length;
   dream.data = nullptr;
   Somnium::Host::setPump(nullptr);
+  Somnium::Host::setProgress(nullptr);
   // Next shutter re-inits the sensor via Camera::captureJpeg.
   showReview();
   Somnium::Console::println("UI review");
@@ -350,53 +644,34 @@ void mapInputs() {
       case Somnium::InputEvent::EncoderTurned:
         if (gScreen == Screen::Mode) {
           gMode.nudge(Somnium::Inputs::lastEncoderDelta());
+        } else if (gScreen == Screen::Menu) {
+          gMenu.nudge(Somnium::Inputs::lastEncoderDelta());
         } else if (gScreen == Screen::Storage) {
           const int before = gPreview.storageIndex();
           gPreview.nudge(Somnium::Inputs::lastEncoderDelta());
           const int after = gPreview.storageIndex();
           if (after != before) {
-            loadStorageIndex(after);
+            loadPlate(after, false);
           }
+        } else if (gScreen == Screen::Review) {
+          gPreview.flip();
         }
         break;
 
       case Somnium::InputEvent::ShutterReleased:
         // Shutter is ONLY "take a picture" — never navigation.
-        if (gScreen == Screen::Mode || gScreen == Screen::Storage ||
-            gScreen == Screen::Review) {
+        if (gScreen == Screen::Mode || gScreen == Screen::Menu ||
+            gScreen == Screen::Storage || gScreen == Screen::Review) {
           requestCapture();
         }
         break;
 
       case Somnium::InputEvent::EncoderPressed:
-        // Dismiss stuck screens on press (don't wait for release).
-        if (gScreen == Screen::Review) {
-          freeResult();
-          showMode();
-          gIgnoreNextEncRelease = true;
-        } else if (gScreen == Screen::Process && gProcessHolding) {
-          showMode();
-          gIgnoreNextEncRelease = true;
-        }
+        gEncPressedMs = millis();
         break;
 
       case Somnium::InputEvent::EncoderReleased:
-        if (gIgnoreNextEncRelease) {
-          gIgnoreNextEncRelease = false;
-          break;
-        }
-        // Dial click: Modes ↔ Storage; also dismiss Review if press was missed.
-        if (gScreen == Screen::Mode) {
-          showStorage();
-        } else if (gScreen == Screen::Storage) {
-          freeStorageJpeg();
-          showMode();
-        } else if (gScreen == Screen::Review) {
-          freeResult();
-          showMode();
-        } else if (gScreen == Screen::Process && gProcessHolding) {
-          showMode();
-        }
+        onDial(millis() - gEncPressedMs >= kLongPressMs);
         break;
 
       default:
@@ -433,9 +708,9 @@ void Runtime::tick() {
       gMode.clearTakePhoto();
       requestCapture();
     }
-    if (gMode.openStorageRequested()) {
-      gMode.clearOpenStorage();
-      showStorage();
+    if (gMode.openMenuRequested()) {
+      gMode.clearOpenMenu();
+      showMenu();
     }
   }
 
@@ -449,8 +724,7 @@ void Runtime::tick() {
   if (gScreen == Screen::Review) {
     if (gPreview.autoDone() || gPreview.backRequested()) {
       gPreview.clearBack();
-      freeResult();
-      showMode();
+      leaveReview();
     }
   }
 
@@ -458,7 +732,7 @@ void Runtime::tick() {
     if (gPreview.backRequested()) {
       gPreview.clearBack();
       freeStorageJpeg();
-      showMode();
+      showMenu();
     }
   }
 

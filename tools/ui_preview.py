@@ -7,8 +7,7 @@
   python tools/ui_preview.py --screen storage
 
 Sidebar (or 1–9 / [ ] / Tab) picks a screen.
-  Modes / Storage: ←/→   Review: auto-returns to Modes after ~2.2s
-  Esc quits.
+  Looks / Gallery / Menu: left and right. Esc quits.
 """
 
 from __future__ import annotations
@@ -33,23 +32,25 @@ REVIEW_MS = 2200
 
 SCREENS = [
     ("boot", "Boot"),
-    ("boot_mid", "Boot (mid)"),
-    ("modes", "Modes"),
-    ("modes_slide", "Modes (sliding)"),
-    ("process", "Process"),
-    ("review", "Review (post-shot)"),
-    ("storage", "Storage"),
-    ("storage_empty", "Storage (empty)"),
-    ("usb_off", "Modes · USB."),
+    ("looks", "Looks"),
+    ("looks_surprise", "Looks · Surprise"),
+    ("menu", "Menu"),
+    ("process_capture", "Cook · capture"),
+    ("process_style", "Cook · styling"),
+    ("process_receive", "Cook · receiving"),
+    ("process_timeout", "Cook · timeout"),
+    ("review_dream", "Review · dream"),
+    ("review_raw", "Review · raw"),
+    ("gallery", "Gallery"),
+    ("gallery_empty", "Gallery · empty"),
 ]
 
-# Fake SD gallery for Storage browsing in the preview.
+# Plates for the gallery mock. Labels come from creative.json, not the old tokens.
 FAKE_PHOTOS = [
-    {"label": "NOIR", "tint": (50, 50, 55)},
-    {"label": "CARTOON", "tint": (90, 40, 70)},
-    {"label": "CYBER", "tint": (20, 70, 90)},
-    {"label": "WASH", "tint": (80, 55, 40)},
-    {"label": "GOURMET", "tint": (70, 45, 30)},
+    {"label": "COMIC #3", "side": "DREAM", "tint": (220, 80, 180), "mode": "popcomic"},
+    {"label": "WATERCOLOR #4", "side": "DREAM", "tint": (255, 160, 60), "mode": "watercolor"},
+    {"label": "ANIME #5", "side": "DREAM", "tint": (255, 120, 200), "mode": "anime"},
+    {"label": "PENCIL SKETCH #6", "side": "RAW", "tint": (210, 170, 100), "mode": "pencil"},
 ]
 
 
@@ -123,7 +124,7 @@ def boot_stage(ms: int) -> str:
         return "salting the sensors..."
     if ms < 7200:
         return "proofing the pixels..."
-    return "plating Somnium..."
+    return "pick a look..."
 
 
 class Preview:
@@ -164,6 +165,44 @@ class Preview:
         self.running = True
         self._row_h = 28
         self._list_top = 36
+        self.previews = self._load_previews()
+        self.menu_i = 0
+
+    def _load_previews(self):
+        images = {}
+        try:
+            from PIL import Image, ImageOps
+        except ImportError:
+            return images
+        for mode in self.theme["modes"]:
+            name = mode.get("preview")
+            if not name:
+                continue
+            path = ROOT / "creative" / name
+            if not path.is_file():
+                continue
+            with Image.open(path) as image:
+                image = ImageOps.exif_transpose(image).convert("RGB")
+                image = ImageOps.pad(image, (168, 100), method=Image.Resampling.LANCZOS, color=(0, 0, 0))
+                images[mode["id"]] = image
+        return images
+
+    def _blit_preview(self, mode_id, box, contain=False):
+        image = self.previews.get(mode_id)
+        if image is None:
+            return False
+        x, y, w, h = box
+        if contain and image.width and image.height:
+            scale = min(w / image.width, h / image.height)
+            dw = max(1, int(image.width * scale))
+            dh = max(1, int(image.height * scale))
+            scaled = image.resize((dw, dh))
+            origin = (x + (w - dw) // 2, y + (h - dh) // 2)
+        else:
+            scaled = image.resize((max(1, w), max(1, h)))
+            origin = (x, y)
+        self.fb.blit(self.pygame.image.fromstring(scaled.tobytes(), scaled.size, "RGB"), origin)
+        return True
 
     def fill(self, color):
         self.fb.fill(color)
@@ -271,30 +310,28 @@ class Preview:
         self.screen_i = i
         self.page = SCREENS[i][0]
         self.boot_live = self.page == "boot"
-        self.wifi_on = self.page != "usb_off"
-        self.review_live = self.page == "review"
+        self.wifi_on = True
+        self.review_live = False
         self.review_ms = 0
-        if self.page in ("boot", "boot_mid"):
-            self.boot_ms = 0 if self.page == "boot" else 4500
-        elif self.page in ("modes", "usb_off"):
+        self.boot_ms = 1200 if self.page == "boot" else self.boot_ms
+        if self.page == "looks":
             self.index = 0
-            self.slide = 0.0
-            self.sliding = False
-        elif self.page == "modes_slide":
+        elif self.page == "looks_surprise":
+            self.index = 3
+        elif self.page == "menu":
+            self.menu_i = 0
             self.index = 1
-            self.slide = 0.45
-            self.sliding = False
-        elif self.page == "process":
-            self.process_ms = 0
-        elif self.page == "storage":
+        elif self.page.startswith("process"):
+            self.process_ms = 1400
+            self.index = 1
+        elif self.page == "gallery":
             self.photos = list(FAKE_PHOTOS)
             self.photo_i = len(self.photos) - 1
-        elif self.page == "storage_empty":
+        elif self.page == "gallery_empty":
             self.photos = []
             self.photo_i = 0
-        elif self.page == "review":
-            self.photos = list(FAKE_PHOTOS)
-            self.photo_i = len(self.photos) - 1
+        elif self.page.startswith("review"):
+            self.index = 1
 
     def draw_boot(self, dt):
         if self.boot_live:
@@ -316,119 +353,150 @@ class Preview:
         )
         self.draw_pill((40, 198, 240, 14), self.boot_ms / 9000.0)
 
-    def _panel(self, mode_i, slot, slide):
-        modes = self.theme["modes"]
-        n = len(modes)
-        mode = modes[mode_i % n]
-        x_norm = slot + slide
-        depth = abs(x_norm)
-        scale = 1.0 - depth * 0.22
-        w = int(150 * scale)
-        h = int(150 * scale)
-        cx = int(W / 2 + x_norm * 95)
-        cy = int(118 + depth * 10)
-        x, y = cx - w // 2, cy - h // 2
-        front = depth < 0.35
-        frame = self.theme["pink"] if front else self.theme["pinkDim"]
-        self.rect((x, y, w, h), self.theme["panel"])
-        self.rect((x, y, w, h), frame, 1)
-        img_h = int(h * 0.55)
-        tint = (
-            40 + (abs(hash(mode["id"])) % 80),
-            20 + (abs(hash(mode["label"])) % 60),
-            40 + (abs(hash(mode["id"][::-1])) % 80),
-        )
-        self.rect((x + 6, y + 6, w - 12, img_h), tint)
-        color = self.theme["pink"] if front else self.theme["muted"]
-        font = self.font if front else self.font_sm
-        self.text(mode["label"], (x + w // 2, y + h - 26), color, font, center=True)
-
     def nudge_modes(self, delta: int):
-        if delta == 0 or self.sliding:
+        if delta == 0 or self.page not in ("looks", "looks_surprise"):
             return
-        if self.page not in ("modes", "usb_off"):
-            return
-        self.index += 1 if delta > 0 else -1
-        self.slide_from = 1.0 if delta > 0 else -1.0
-        self.slide = self.slide_from
-        self.slide_t0 = time.perf_counter()
-        self.sliding = True
+        self.index = (self.index + (1 if delta > 0 else -1)) % len(self.theme["modes"])
 
     def nudge_storage(self, delta: int):
         n = len(self.photos)
-        if n <= 0 or delta == 0:
+        if n <= 0 or delta == 0 or self.page != "gallery":
             return
         self.photo_i = (self.photo_i + (1 if delta > 0 else -1)) % n
 
-    def update_slide(self):
-        if self.page == "modes_slide":
+    def nudge_menu(self, delta: int):
+        if delta == 0 or self.page != "menu":
             return
-        if not self.sliding:
-            self.slide = 0.0
-            return
-        t = (time.perf_counter() - self.slide_t0) / self.slide_dur
-        if t >= 1.0:
-            self.slide = 0.0
-            self.sliding = False
-            return
-        self.slide = self.slide_from + (0.0 - self.slide_from) * ease_in_out_quad(t)
+        self.menu_i = (self.menu_i + (1 if delta > 0 else -1)) % 3
 
-    def draw_modes(self, _dt):
-        self.update_slide()
+    def draw_looks(self, _dt):
+        modes = self.theme["modes"]
+        mode = modes[self.index % len(modes)]
         self.fill(self.theme["bg"])
-        self.draw_header(wifi=self.wifi_on)
-        self.rect((0, 22, W, H - 22), self.theme["bg"])
-        for slot, off in ((-2, -2), (2, 2), (-1, -1), (1, 1), (0, 0)):
-            self._panel(self.index + off, float(slot), self.slide)
+        self.draw_header("Looks", wifi=self.wifi_on)
+        self.rect((16, 30, 288, 118), self.theme["panel"])
+        self.rect((16, 30, 288, 118), self.theme["pink"], 1)
+        img = (76, 36, 168, 100)
+        tint = tuple(mode.get("tint") or (80, 40, 60))
+        if not self._blit_preview(mode["id"], img):
+            self.rect(img, tint)
+            self.text(mode["label"], (W // 2, 78), (0, 0, 0), self.font_sm, center=True)
+        self.text(mode["label"], (W // 2, 154), self.theme["pink"], self.font, center=True)
+        thumb_w, thumb_h, gap = 44, 26, 8
+        total = len(modes) * thumb_w + (len(modes) - 1) * gap
+        x = (W - total) // 2
+        for i, item in enumerate(modes):
+            selected = i == self.index % len(modes)
+            self.rect((x, 182, thumb_w, thumb_h), self.theme["pink"] if selected else self.theme["pinkDim"], 1)
+            box = (x + 2, 184, thumb_w - 4, thumb_h - 4)
+            if not self._blit_preview(item["id"], box):
+                self.rect(box, tuple(item.get("tint") or (80, 40, 60)))
+            x += thumb_w + gap
         self.text(
-            "turn dial · click shutter",
-            (W // 2, 220),
+            "turn: look   click: menu   shutter: shoot",
+            (W // 2, 216),
+            self.theme["muted"],
+            center=True,
+        )
+
+    def draw_menu(self, _dt):
+        mode = self.theme["modes"][self.index % len(self.theme["modes"])]
+        self.fill(self.theme["bg"])
+        self.draw_header("Menu")
+        self.text("4 plates", (W // 2, 36), self.theme["muted"], center=True)
+        rows = ["Gallery", f"Shoot  {mode['label']}", "Back"]
+        for i, row in enumerate(rows):
+            y = 64 + i * 40
+            on = i == self.menu_i
+            if on:
+                self.rect((24, y, 272, 32), self.theme["panel"])
+                self.rect((24, y, 4, 32), self.theme["pink"])
+                self.rect((24, y, 272, 32), self.theme["pink"], 1)
+            self.text(row, (40, y + 8), self.theme["pink"] if on else self.theme["muted"])
+        self.text(
+            "turn: move   click: choose   shutter: shoot",
+            (W // 2, 214),
             self.theme["muted"],
             center=True,
         )
 
     def draw_process(self, dt):
         self.process_ms += int(dt * 1000)
+        stage = {
+            "process_capture": 0,
+            "process_style": 2,
+            "process_receive": 3,
+            "process_timeout": 2,
+        }.get(self.page, 2)
+        failed = self.page == "process_timeout"
         mode = self.theme["modes"][self.index % len(self.theme["modes"])]
         self.fill(self.theme["bg"])
-        self.text(
-            "cam > plate > sparkle",
-            (W // 2, 40),
-            self.theme["muted"],
-            center=True,
-        )
-        y = 88
-        for x in (36, 140, 244):
-            self.rect((x, y, 40, 40), self.theme["panel"])
-        self.pygame.draw.line(self.fb, self.theme["pink"], (76, y + 20), (140, y + 20))
-        self.pygame.draw.line(self.fb, self.theme["pink"], (180, y + 20), (244, y + 20))
-        # Same order as Boot: fire · salt · whisk — no progress bar
-        self.draw_fire(56, y + 14, self.process_ms)
-        self.draw_salt(160, y + 12, self.process_ms)
-        self.draw_whisk(264, y + 10, self.process_ms)
-        self.text(
-            "Magic is Happening...",
-            (W // 2, 160),
-            self.theme["pink"],
-            self.font,
-            center=True,
-        )
-        self.text(mode["label"], (W // 2, 196), self.theme["muted"], center=True)
+        title = "Kitchen trouble" if failed else "Cooking"
+        self.text(title, (W // 2, 8), self.theme["pink"], self.font, center=True)
+        self.text(mode["label"], (W // 2, 28), self.theme["muted"], center=True)
+        names = ["CAPTURE", "SEND", "STYLE", "RECEIVE"]
+        box_w, gap, box_h = 70, 6, 28
+        total = 4 * box_w + 3 * gap
+        x = (W - total) // 2
+        y = 48
+        danger = (220, 80, 80)
+        for i, name in enumerate(names):
+            current = i == stage
+            done = i < stage and not failed
+            if failed and current:
+                ink = danger
+                frame = danger
+            elif current or done:
+                ink = self.theme["pink"]
+                frame = self.theme["pink"]
+            else:
+                ink = self.theme["muted"]
+                frame = self.theme["pinkDim"]
+            self.rect((x, y, box_w, box_h), self.theme["panel"])
+            self.rect((x, y, box_w, box_h), frame, 1)
+            self.text(name, (x + box_w // 2, y + 8), ink, self.font_sm, center=True)
+            x += box_w + gap
+        status = {
+            0: "capturing the frame",
+            1: "sending over USB",
+            2: "timed out - no reply" if failed else "styling on the laptop",
+            3: "receiving the dream",
+        }[stage]
+        self.text(status, (W // 2, 86), self.theme["muted"], center=True)
+        self.text("0:12", (W // 2, 104), self.theme["muted"], center=True)
+        icon_y = 128
+        for ix in (36, 140, 244):
+            self.rect((ix, icon_y, 40, 40), self.theme["panel"])
+        self.draw_fire(56, icon_y + 14, self.process_ms)
+        self.draw_salt(160, icon_y + 12, self.process_ms)
+        self.draw_whisk(264, icon_y + 10, self.process_ms)
+        hint = "click dial to return" if failed else "dial locked while cooking"
+        self.text(hint, (W // 2, 214), self.theme["muted"], center=True)
 
-    def draw_preview_chrome(self, kind: str, label: str, index1: int, total: int):
+    def draw_badge(self, label):
+        surf = self.font_sm.render(label, True, self.theme["pink"])
+        w = surf.get_width() + 8
+        x = W - w - 6
+        self.rect((x, 4, w, 14), self.theme["bg"])
+        self.fb.blit(surf, (x + 4, 5))
+
+    def draw_preview_chrome(self, kind: str, label: str, index1: int, total: int, side: str):
         self.rect((0, 0, W, 22), self.theme["surface"])
-        if kind == "storage":
-            self.text("< Modes", (6, 5), self.theme["pink"])
+        if kind == "review":
+            hint = "turn: flip   click: looks"
+        elif total <= 0:
+            hint = "click: back"
         else:
-            self.text(label, (6, 5), self.theme["pink"])
-
+            hint = "click: flip   hold: back"
+        self.text(hint, (6, 5), self.theme["pink"])
+        if kind == "review" or total > 0:
+            self.draw_badge(side)
         self.rect((0, H - 28, W, 28), self.theme["surface"])
-        if kind == "storage":
+        if kind == "gallery":
             meta = "no plates yet" if total <= 0 else f"{label}  {index1}/{total}"
-            self.text(meta, (8, H - 18), self.theme["pink"])
         else:
-            self.text("saved", (8, H - 18), self.theme["muted"])
-
+            meta = label
+        self.text(meta, (8, H - 18), self.theme["pink"])
         when = time.strftime("%b %d  %H:%M")
         surf = self.font_sm.render(when, True, self.theme["pink"])
         tx = W - surf.get_width() - 8
@@ -437,39 +505,44 @@ class Preview:
             self.fb, self.theme["pinkDim"], (tx, H - 8), (tx + surf.get_width(), H - 8)
         )
 
-    def draw_review(self, dt):
-        if self.review_live:
-            self.review_ms += int(dt * 1000)
-            if self.review_ms >= REVIEW_MS:
-                # Camera-style: glance then back to Modes
-                self.select_screen([s[0] for s in SCREENS].index("modes"))
-                return
+    def draw_review(self, _dt):
         mode = self.theme["modes"][self.index % len(self.theme["modes"])]
-        photo = {"label": mode["label"], "tint": (60, 30, 50)}
-        self.fake_photo(photo)
-        self.draw_preview_chrome("review", mode["label"], 0, 0)
+        side = "RAW" if self.page == "review_raw" else "DREAM"
+        self.fill(self.theme["bg"])
+        if side == "DREAM" and self.previews.get(mode["id"]) is not None:
+            self._blit_preview(mode["id"], (0, 0, W, H), contain=True)
+        else:
+            tint = tuple(mode.get("tint") or (60, 30, 50))
+            self.fake_photo({"label": mode["label"], "tint": tint})
+        self.draw_preview_chrome("review", mode["label"], 0, 0, side)
 
     def draw_storage(self, _dt):
         n = len(self.photos)
         if n <= 0:
             self.fill(self.theme["bg"])
             self.text("no plates yet", (W // 2, 110), self.theme["muted"], center=True)
-            self.draw_preview_chrome("storage", "", 0, 0)
+            self.draw_preview_chrome("gallery", "", 0, 0, "DREAM")
             return
         photo = self.photos[self.photo_i]
-        self.fake_photo(photo)
-        self.draw_preview_chrome("storage", photo["label"], self.photo_i + 1, n)
+        self.fill(self.theme["bg"])
+        if photo["side"] == "DREAM" and self._blit_preview(photo["mode"], (0, 0, W, H), contain=True):
+            pass
+        else:
+            self.fake_photo(photo)
+        self.draw_preview_chrome("gallery", photo["label"], self.photo_i + 1, n, photo["side"])
 
     def draw_panel_page(self, dt: float):
-        if self.page in ("boot", "boot_mid"):
+        if self.page == "boot":
             self.draw_boot(dt)
-        elif self.page in ("modes", "modes_slide", "usb_off"):
-            self.draw_modes(dt)
-        elif self.page == "process":
+        elif self.page in ("looks", "looks_surprise"):
+            self.draw_looks(dt)
+        elif self.page == "menu":
+            self.draw_menu(dt)
+        elif self.page.startswith("process"):
             self.draw_process(dt)
-        elif self.page == "review":
+        elif self.page.startswith("review"):
             self.draw_review(dt)
-        elif self.page in ("storage", "storage_empty"):
+        elif self.page in ("gallery", "gallery_empty"):
             self.draw_storage(dt)
 
     def draw_sidebar(self):
@@ -540,15 +613,13 @@ class Preview:
                 if idx < len(SCREENS):
                     self.select_screen(idx)
             elif event.key in (self.pygame.K_LEFT, self.pygame.K_a):
-                if self.page in ("storage",):
-                    self.nudge_storage(-1)
-                else:
-                    self.nudge_modes(-1)
+                self.nudge_storage(-1)
+                self.nudge_menu(-1)
+                self.nudge_modes(-1)
             elif event.key in (self.pygame.K_RIGHT, self.pygame.K_d):
-                if self.page in ("storage",):
-                    self.nudge_storage(1)
-                else:
-                    self.nudge_modes(1)
+                self.nudge_storage(1)
+                self.nudge_menu(1)
+                self.nudge_modes(1)
             elif event.key == self.pygame.K_r and self.page == "boot":
                 self.boot_ms = 0
 
@@ -569,12 +640,7 @@ class Preview:
             self.boot_live = False
             if sid == "boot":
                 self.boot_ms = 1200
-            elif sid == "boot_mid":
-                self.boot_ms = 4500
-            elif sid == "process":
-                self.process_ms = 1200
-            elif sid == "review":
-                self.review_ms = 800
+                self.boot_live = False
             self.frame(0)
             path = out_dir / f"{sid}.png"
             self.pygame.image.save(self.fb, str(path))

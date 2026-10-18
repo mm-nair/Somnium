@@ -4,7 +4,10 @@ Edit **`creative.json`** for look, modes, and which models to use. Then sync:
 
 ```sh
 ./scripts/sync_creative.sh
+python tools/sync_creative.py --check
 ```
+
+`--check` fails if `Modes.h`, `CreativeGen.h`, `ModeBitmaps.h`, or `LogoBitmap.h` drift from this folder. The firmware build runs the same check for `Modes.h` and `CreativeGen.h` before compiling. Mode `id` is the USB style token and the SD filename prefix (lowercase). `label` is what the camera prints, at most 15 characters, so a gallery tag such as `PENCIL SKETCH-raw` fits.
 
 That regenerates firmware headers from this folder:
 
