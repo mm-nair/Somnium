@@ -95,7 +95,8 @@ Full checklist: `./scripts/dev.sh`
 | [`creative/creative.json`](creative/creative.json) | Look & modes — theme, font, logo, filters, mood, providers |
 | [`creative/logo.png`](creative/logo.png) | Boot logo source |
 | [`server/settings.json`](server/settings.json) | Host/port, venue lat/lon, API URLs, context flags |
-| [`.env`](.env.example) | Secrets (`XAI_KEY`) |
+| [`.env`](.env.example) | Secrets (`XAI_KEY`). Do not commit the gallery token |
+| [`server/README.md`](server/README.md) | Optional gallery upload (`SOMNIUM_UPLOAD_URL`, `SOMNIUM_UPLOAD_TOKEN`) |
 
 The camera's left/right correction is `Defaults::kCameraMirrorHorizontal` in
 [`lib/Somnium/Config.h`](lib/Somnium/Config.h). It defaults to `true` and mirrors
@@ -106,6 +107,26 @@ After editing creative JSON / logo:
 
 ```sh
 ./scripts/sync_creative.sh   # → Modes.h, CreativeGen.h, LogoBitmap.h
+```
+
+## Gallery upload
+
+On the NixOS image server, shots are saved under `server/outputs/`. Uploading
+them is optional. Source a mode `600` env file that stays out of git (see
+[`server/README.md`](server/README.md)):
+
+```sh
+export SOMNIUM_UPLOAD_URL=https://www.somnium.photo/api/upload
+export SOMNIUM_UPLOAD_TOKEN=your-token-here
+```
+
+`your-token-here` is a placeholder. When both variables are set for the camera
+server, it uploads each saved shot and the directory watcher is optional. To
+watch `server/outputs` instead, from the repository root:
+
+```sh
+nix develop -c python server/scripts/somnium_uploader.py watch server/outputs
+nix run .#uploader
 ```
 
 ## Day-to-day tools
@@ -122,7 +143,7 @@ python tests/capture_photo.py -o shot.jpg
 
 ```
 creative/          ← edit look, modes, prompts, mood artifacts, logo
-server/            FastAPI brain (settings.json + providers)
+server/            FastAPI brain (settings.json, providers, scripts/somnium_uploader.py)
 lib/Somnium/       camera, USB COOK/DREAM, SD, inputs, display
 lib/SomniumUi/     page / canvas toolkit
 lib/SomniumApp/    screens (generated Modes/theme/logo headers)
