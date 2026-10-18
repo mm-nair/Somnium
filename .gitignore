@@ -17,3 +17,5 @@ server/**/__pycache__/
 .DS_Store
 
 process/
+!gallery_1.jpg
+!gallery_2.jpg
