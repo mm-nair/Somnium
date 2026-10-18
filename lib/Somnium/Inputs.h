@@ -11,6 +11,8 @@ enum class InputEvent : uint8_t {
   EncoderPressed,
   EncoderReleased,
   EncoderTurned,
+  // Phone / other tasks. Drained by pollEvent after the physical edges.
+  ModeRequested,
 };
 
 class Inputs {
@@ -22,7 +24,13 @@ class Inputs {
   static bool encoderButtonDown();
   static long encoderPosition();
   static int8_t lastEncoderDelta();
+  static int8_t lastModeRequest();
   static InputEvent pollEvent();
+
+  // Safe to call from another task (the BLE host task). The UI loop is
+  // still the only consumer, via pollEvent.
+  static bool postShutter();
+  static bool postMode(int8_t index);
 
  private:
   struct Button {
@@ -45,6 +53,7 @@ class Inputs {
   static long sEncoderPosition;
   static int8_t sLastEncoderDelta;
   static int8_t sPendingEncoderDelta;
+  static int8_t sLastModeRequest;
 };
 
 }  // namespace Somnium

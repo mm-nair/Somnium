@@ -92,6 +92,22 @@ void ModePage::onEnter() {
   markDirty();
 }
 
+void ModePage::selectIndex(int index) {
+  if (index < 0) {
+    return;
+  }
+  const int target = index % kModeCount;
+  if (target == index_) {
+    return;
+  }
+  index_ = target;
+  pendingNudge_ = 0;
+  slide_ = 0;
+  slideTween_ = Somnium::Ui::Tween();
+  headerOnly_ = false;
+  markDirty();
+}
+
 void ModePage::nudge(int delta) {
   if (delta == 0) {
     return;

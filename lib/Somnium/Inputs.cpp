@@ -11,6 +11,48 @@ int Inputs::sEncoderTransitions = 0;
 long Inputs::sEncoderPosition = 0;
 int8_t Inputs::sLastEncoderDelta = 0;
 int8_t Inputs::sPendingEncoderDelta = 0;
+int8_t Inputs::sLastModeRequest = 0;
+
+namespace {
+
+struct PostedEvent {
+  InputEvent event;
+  int8_t extra;
+};
+
+constexpr int kPostedCap = 8;
+PostedEvent sPosted[kPostedCap];
+uint8_t sPostedHead = 0;
+uint8_t sPostedTail = 0;
+portMUX_TYPE sPostedMux = portMUX_INITIALIZER_UNLOCKED;
+
+bool postEvent(InputEvent event, int8_t extra) {
+  portENTER_CRITICAL(&sPostedMux);
+  const uint8_t next = static_cast<uint8_t>((sPostedTail + 1) % kPostedCap);
+  if (next == sPostedHead) {
+    portEXIT_CRITICAL(&sPostedMux);
+    return false;
+  }
+  sPosted[sPostedTail].event = event;
+  sPosted[sPostedTail].extra = extra;
+  sPostedTail = next;
+  portEXIT_CRITICAL(&sPostedMux);
+  return true;
+}
+
+bool takeEvent(PostedEvent &out) {
+  portENTER_CRITICAL(&sPostedMux);
+  if (sPostedHead == sPostedTail) {
+    portEXIT_CRITICAL(&sPostedMux);
+    return false;
+  }
+  out = sPosted[sPostedHead];
+  sPostedHead = static_cast<uint8_t>((sPostedHead + 1) % kPostedCap);
+  portEXIT_CRITICAL(&sPostedMux);
+  return true;
+}
+
+}  // namespace
 
 void Inputs::initButton(Button &button, uint8_t pin) {
   button.pin = pin;
@@ -96,6 +138,17 @@ long Inputs::encoderPosition() { return sEncoderPosition; }
 
 int8_t Inputs::lastEncoderDelta() { return sLastEncoderDelta; }
 
+int8_t Inputs::lastModeRequest() { return sLastModeRequest; }
+
+bool Inputs::postShutter() {
+  // The UI acts on the release edge. One posted release is one shutter.
+  return postEvent(InputEvent::ShutterReleased, 0);
+}
+
+bool Inputs::postMode(int8_t index) {
+  return postEvent(InputEvent::ModeRequested, index);
+}
+
 InputEvent Inputs::pollEvent() {
   if (sShutter.pressEvent) {
     sShutter.pressEvent = false;
@@ -118,6 +171,15 @@ InputEvent Inputs::pollEvent() {
     sPendingEncoderDelta =
         static_cast<int8_t>(sPendingEncoderDelta - sLastEncoderDelta);
     return InputEvent::EncoderTurned;
+  }
+  PostedEvent posted;
+  if (takeEvent(posted)) {
+    if (posted.event == InputEvent::ModeRequested) {
+      sLastModeRequest = posted.extra;
+    } else if (posted.event == InputEvent::EncoderTurned) {
+      sLastEncoderDelta = posted.extra > 0 ? 1 : -1;
+    }
+    return posted.event;
   }
   return InputEvent::None;
 }
