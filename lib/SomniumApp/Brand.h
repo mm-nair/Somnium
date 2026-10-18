@@ -2,10 +2,10 @@
 
 #include <Canvas.h>
 #include <Display.h>
-#include <Fonts/FreeSerifBoldItalic12pt7b.h>
 #include <Text.h>
 #include <Ui.h>
 
+#include "CreativeGen.h"
 #include "LogoBitmap.h"
 
 namespace Somnium {
@@ -13,13 +13,13 @@ namespace App {
 
 struct Brand {
   static void applyTheme(Somnium::Ui::Theme &theme) {
-    theme.bg = Somnium::Ui::Color::rgb565(0, 0, 0);
-    theme.surface = Somnium::Ui::Color::rgb565(20, 12, 18);
-    theme.surfaceAlt = Somnium::Ui::Color::rgb565(36, 20, 30);
-    theme.text = Somnium::Ui::Color::rgb565(255, 105, 180);
-    theme.textMuted = Somnium::Ui::Color::rgb565(140, 110, 125);
+    theme.bg = Somnium::Ui::Color(Creative::kColorBg);
+    theme.surface = Somnium::Ui::Color(Creative::kColorSurface);
+    theme.surfaceAlt = Somnium::Ui::Color(Creative::kColorPanel);
+    theme.text = Somnium::Ui::Color(Creative::kColorPink);
+    theme.textMuted = Somnium::Ui::Color(Creative::kColorMuted);
     theme.accent = theme.text;
-    theme.pinkDim = Somnium::Ui::Color::rgb565(200, 80, 140);
+    theme.pinkDim = Somnium::Ui::Color(Creative::kColorPinkDim);
   }
 
   static void drawLogo(Somnium::Ui::Canvas &c, int16_t x, int16_t y) {
@@ -44,7 +44,7 @@ struct Brand {
       return;
     }
     const Somnium::Ui::Point o = c.origin();
-    gfx->setFont(&FreeSerifBoldItalic12pt7b);
+    gfx->setFont(&SOMNIUM_TITLE_FONT);
     gfx->setTextColor(color);
     gfx->setTextSize(1);
     gfx->setCursor(x + o.x, y + o.y);

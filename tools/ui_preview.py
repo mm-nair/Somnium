@@ -23,6 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CREATIVE = ROOT / "creative" / "creative.json"
+LOGO_PNG = ROOT / "creative" / "logo.png"
 LOGO_H = ROOT / "lib" / "SomniumApp" / "LogoBitmap.h"
 
 W, H = 320, 240
@@ -74,6 +75,23 @@ def load_theme() -> dict:
 
 
 def load_logo() -> list[list[tuple[int, int, int]]] | None:
+    # Prefer creative/logo.png (source of truth); fall back to generated header.
+    if LOGO_PNG.is_file():
+        try:
+            from PIL import Image
+
+            im = Image.open(LOGO_PNG).convert("RGBA")
+            im.thumbnail((160, 56), Image.Resampling.LANCZOS)
+            rows = []
+            for y in range(im.height):
+                row = []
+                for x in range(im.width):
+                    r, g, b, a = im.getpixel((x, y))
+                    row.append((0, 0, 0) if a < 16 else (r, g, b))
+                rows.append(row)
+            return rows
+        except Exception:
+            pass
     if not LOGO_H.exists():
         return None
     text = LOGO_H.read_text()

@@ -1,0 +1,31 @@
+{
+  "host": "0.0.0.0",
+  "port": 8080,
+  "output_dir": "outputs",
+  "venue": {
+    "lat": 47.6553,
+    "lon": -122.3035,
+    "label": "Your venue"
+  },
+  "context": {
+    "include_weather": true,
+    "include_astro": true,
+    "include_sun": true
+  },
+  "prompt_api": {
+    "base_url": "https://api.x.ai/v1",
+    "model": "grok-3-mini",
+    "api_key_env": "XAI_KEY",
+    "temperature": 0.35
+  },
+  "image_api": {
+    "base_url": "https://api.x.ai/v1",
+    "model": "grok-imagine-image-2.0",
+    "api_key_env": "XAI_KEY",
+    "extra": {
+      "aspect_ratio": "auto",
+      "resolution": "1k",
+      "quality": "low"
+    }
+  }
+}

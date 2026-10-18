@@ -60,6 +60,9 @@ class OpenAICompatPromptProvider:
             text = payload["choices"][0]["message"]["content"].strip()
             return text or user
         except urllib.error.HTTPError as err:
+            # Rate limit / capacity → use the filter draft so cook still runs.
+            if err.code in (429, 503):
+                return user
             detail = err.read().decode(errors="replace")[:400]
             raise RuntimeError(f"prompt HTTP {err.code}: {detail}") from err
         except (urllib.error.URLError, KeyError, IndexError, json.JSONDecodeError) as err:

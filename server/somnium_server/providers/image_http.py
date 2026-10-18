@@ -11,7 +11,7 @@ from somnium_server.config import env_secret
 
 class HttpImageProvider:
     """
-    Generic HTTP img2img adapter. Map field names / extras in config.yaml.
+    Generic HTTP img2img adapter. Map field names / extras in settings.json.
 
     Expected success response (first match wins):
       - raw image/* body

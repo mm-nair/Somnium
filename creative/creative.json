@@ -3,52 +3,63 @@
     "name": "Somnium",
     "tagline": "kitchen magic cam"
   },
+  "ui": {
+    "font": "FreeSerifBoldItalic12pt7b",
+    "logo": "logo.png",
+    "logo_max_w": 160,
+    "logo_max_h": 56
+  },
   "theme": {
     "bg": [0, 0, 0],
+    "surface": [20, 12, 18],
+    "panel": [36, 20, 30],
     "pink": [255, 105, 180],
     "pinkDim": [200, 80, 140],
-    "muted": [140, 110, 125],
-    "surface": [20, 12, 18],
-    "panel": [36, 20, 30]
+    "muted": [140, 110, 125]
   },
   "modes": [
     {
       "id": "noir",
       "label": "NOIR",
       "real": true,
-      "keywords": "high-contrast black and white film noir, deep shadows, silver gelatin",
-      "prompt": "Restyle as moody film noir. High contrast B&W, Venetian blinds light, cigarette-smoke atmosphere. Keep the subject's pose. Context: {context}."
+      "tint": [80, 80, 90],
+      "keywords": "high-contrast B&W grade, crushed blacks, silver gelatin grain",
+      "prompt": "Apply a film-noir COLOR GRADE only: black and white, high contrast, slight grain. Do not add or remove objects. Context mood: {context}."
     },
     {
       "id": "cartoon",
       "label": "CARTOON",
       "real": true,
-      "keywords": "bold outlines, flat pastel colors, playful cartoon cel shading",
-      "prompt": "Restyle as a charming cartoon illustration with bold outlines and flat colors, kitchen-storybook warmth. Keep composition. Context: {context}."
+      "tint": [220, 80, 180],
+      "keywords": "cel-shaded color grade, soft outlines, flat pastel tones",
+      "prompt": "Apply a gentle cartoon FILTER only: slightly flatter colors, soft outline feel. Same scene, same objects. Context mood: {context}."
     },
     {
       "id": "cyberpunk",
       "label": "CYBER",
       "real": true,
-      "keywords": "neon magenta and cyan, wet streets, chrome, futuristic night market",
-      "prompt": "Restyle as neon cyberpunk night scene, magenta/cyan glow, reflective wet surfaces. Keep composition. Context: {context}."
+      "tint": [0, 220, 255],
+      "keywords": "magenta/cyan grade, neon edge light, cool shadows",
+      "prompt": "Apply a cyberpunk COLOR GRADE only: magenta/cyan cast, cooler shadows. Do not invent neon signs or new scenery. Context mood: {context}."
     },
     {
       "id": "watercolor",
       "label": "WASH",
       "real": true,
-      "keywords": "soft watercolor blooms, paper tooth, gentle pigment granulation",
-      "prompt": "Restyle as soft watercolor on cold-press paper, gentle blooms and pastel washes. Keep composition. Context: {context}."
+      "tint": [255, 160, 60],
+      "keywords": "soft watercolor wash over existing pixels, paper tooth",
+      "prompt": "Apply a light watercolor FILTER only over the existing photo. Keep every object in place. Context mood: {context}."
     },
     {
       "id": "gourmet",
       "label": "GOURMET",
       "real": true,
-      "keywords": "food-magazine lighting, rich color grade, culinary editorial",
-      "prompt": "Restyle like a gourmet food-magazine editorial with appetizing warm light and rich color. Kitchen DubHacks vibes. Keep composition. Context: {context}."
+      "tint": [255, 220, 80],
+      "keywords": "warm editorial grade, richer contrast, appetizing color",
+      "prompt": "Apply a gourmet food-magazine COLOR GRADE only: warmer light, richer contrast. No new props. Context mood: {context}."
     }
   ],
-  "prompt_system": "You write one short img2img edit prompt for Somnium, a reality-bending camera. Weave weather, day/night, and sky mood into the atmosphere. Keep the subject's pose and composition. Output ONLY the prompt text — no quotes, no preamble.",
+  "prompt_system": "You write one short IMAGE FILTER prompt for Somnium.\nThis is a style filter on an existing photo — NOT a new generation.\nHard rules for the prompt you output:\n- Change only look: color grade, contrast, grain, palette, mild stylization.\n- Keep the EXACT same framing, subjects, objects, and background content.\n- Do NOT add text, logos, moons, stars, windows, people, props, or sky replacements.\n- Do NOT extend, invent, or collage new scenery.\n- Weather/day-night context may only nudge grade (cooler/warmer, darker/brighter), never invent celestial bodies or weather effects that are not already in the photo.\nOutput ONLY the filter prompt text.",
   "models": {
     "prompt_provider": "openai_compat",
     "image_provider": "xai",

@@ -87,10 +87,11 @@ def load_config() -> dict[str, Any]:
             "temperature": prompt_api.get("temperature", 0.7),
             "system": creative.get("prompt_system", ""),
             "user_template": (
-                "Style: {style_label} ({style_keywords}).\n"
-                "Mood / space context: {context_summary}\n"
+                "Filter style: {style_label} ({style_keywords}).\n"
+                "Grade mood only (do not invent scenery): {context_summary}\n"
                 "Captured: {taken_at} near {location_label}.\n"
-                "Draft: {prompt}"
+                "Draft filter instruction: {prompt}\n"
+                "Rewrite as a SHORT filter prompt. Preserve the photo; grade only."
             ),
         },
         "image": {
@@ -109,8 +110,7 @@ def load_config() -> dict[str, Any]:
             },
         },
         "context": {
-            "provider": models.get("context_provider")
-            or context_cfg.get("provider", "openmeteo"),
+            "provider": models.get("context_provider", "openmeteo"),
             "include_weather": context_cfg.get("include_weather", True),
             "include_astro": context_cfg.get("include_astro", True),
             "include_sun": context_cfg.get("include_sun", True),

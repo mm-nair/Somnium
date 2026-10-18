@@ -1,77 +1,52 @@
-# Pipeline contract (revertable)
-
-Edge (ESP32 C++) and brain (laptop Python) talk over one HTTP call.
-Either side can be replaced without rewriting the other.
-
-## Flow
+# Pipeline
 
 ```
 JPEG + style + taken_at
         │
         ▼
-┌───────────────────┐
-│ Context (Open-Meteo│  weather, day/night, moon, sky mood
-│  + local astro)    │
-└─────────┬─────────┘
-          ▼
-┌───────────────────┐
-│ Prompt (xAI Grok) │  style keywords + mood → img2img prompt
-└─────────┬─────────┘
-          ▼
-┌───────────────────┐
-│ Image (xAI Imagine│  edit capture with that prompt
-│  /images/edits)   │
-└─────────┬─────────┘
-          ▼
-  save *_0_orig.jpg  +  *_1_dream.jpg   (two slideshow entries)
-  return dream JPEG to camera for review glance
+ Context (Open-Meteo weather / day-night + local moon mood)
+        │
+        ▼
+ Prompt (xAI chat) — short FILTER instruction
+        │
+        ▼
+ Image (xAI /images/edits) — grade only, resized to input (320×240)
+        │
+        ▼
+  *_0_orig.jpg  +  *_1_dream.jpg   → slideshow alternates on dial
+  response body = dream JPEG
 ```
 
-## Request
+## HTTP
 
-`POST /v1/process` `multipart/form-data`
+`POST /v1/process` multipart: `image`, `style`, `taken_at`, optional `lat`/`lon`/`force_real`.
 
-| Field | Required | Notes |
-| --- | --- | --- |
-| `image` | yes | JPEG |
-| `style` | no | `cartoon` / `cyberpunk` / … (`creative/creative.json`) |
-| `taken_at` | no | ISO-8601 UTC (NTP on device, or `--at` in cook) |
-| `lat` / `lon` | no | optional overrides |
-| `force_real` | no | `1` to force model call even if `real: false` |
+Response: JPEG + headers `X-Somnium-Prompt`, `X-Somnium-Context`, …
 
-## Response
+## Config map
 
-- `200` `image/jpeg` body (dream / modified image)
-- Headers: `X-Somnium-Prompt`, `X-Somnium-Context`, `X-Somnium-Style`,
-  `X-Somnium-Orig`, `X-Somnium-Dream`
-- Errors: JSON `{"error":"..."}` with 4xx/5xx
+| Concern | File |
+| --- | --- |
+| Modes / prompts / theme / which providers | `creative/creative.json` |
+| Venue, API base URLs, model ids | `server/settings.json` |
+| API key | `.env` → `XAI_KEY` |
 
-## Dual slideshow entries
+## Free mood data
 
-Each cook/shot writes **two** files (sorted so the dial alternates):
+| Signal | Source |
+| --- | --- |
+| Weather, `is_day`, sunrise/sunset | [Open-Meteo](https://open-meteo.com) (no key) |
+| Moon phase | Local math in `context_openmeteo.py` |
+| Bright-sky hints | Heuristic from season/hour |
 
-- `{stamp}_{style}_0_orig.jpg` — unmodified capture
-- `{stamp}_{style}_1_dream.jpg` — model output
+Swap providers in `server/somnium_server/providers/` + register in `registry.py`, then set `models.*` in `creative.json`.
 
-Storage labels show `NOIR·raw` / `NOIR·mod` and `i/len(photos)`.
+## Camera-free cook
 
-## Camera-free test
-
-```bash
-nix develop
+```sh
 ./scripts/cook.sh photo.jpg --style noir --at 2026-10-17T19:30:00Z
-# outputs under server/outputs/
 ```
 
-## Secrets
+## Offline camera
 
-Put `XAI_KEY=...` in repo `.env` (gitignored). `scripts/server.sh` and
-`scripts/cook.sh` load it.
-
-## Swap models
-
-1. Implement `providers/image_*.py` or `prompt_*.py` / `context_*.py`
-2. Register in `providers/registry.py`
-3. Edit `creative/creative.json` → `models` and/or `server/settings.json`
-
-See also `server/DATA.md` for free space/weather APIs.
+`#define SOMNIUM_USE_SERVER 0` in `include/server_config.h`, re-flash.

@@ -3,9 +3,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT/server"
 
-# Creative prompts/modes: ../creative/creative.json
-# Server plumbing: ./settings.json
-# Secrets: ../.env (XAI_KEY)
+# Creative: ../creative/creative.json
+# Plumbing: ./settings.json   Secrets: ../.env (XAI_KEY)
 
 if [[ -f "$ROOT/.env" ]]; then
   set -a

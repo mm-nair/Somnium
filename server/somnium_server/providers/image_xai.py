@@ -1,4 +1,4 @@
-"""xAI Grok Imagine image edits (img2img)."""
+"""xAI Grok Imagine image edits — used as a style filter, output matched to input size."""
 
 from __future__ import annotations
 
@@ -11,8 +11,25 @@ from typing import Any
 
 from somnium_server.config import env_secret
 
+# Prepended so the image model treats the request as a grade/filter, not a redo.
+_FILTER_GUARD = (
+    "Style filter only. Preserve the exact same photograph: same crop, subjects, "
+    "objects, and background. Change color grade / contrast / texture only. "
+    "Do not add, remove, invent, or extend any content. No new text, sky, moons, "
+    "props, or scenery. "
+)
 
-def _to_jpeg(raw: bytes) -> bytes:
+
+def _jpeg_size(raw: bytes) -> tuple[int, int] | None:
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    with Image.open(io.BytesIO(raw)) as im:
+        return im.size  # (w, h)
+
+
+def _to_jpeg(raw: bytes, size: tuple[int, int] | None = None) -> bytes:
     try:
         from PIL import Image
     except ImportError:
@@ -22,41 +39,50 @@ def _to_jpeg(raw: bytes) -> bytes:
         im = im.convert("RGB")
     elif im.mode == "L":
         im = im.convert("RGB")
+    if size is not None and im.size != size:
+        im = im.resize(size, Image.Resampling.LANCZOS)
     buf = io.BytesIO()
-    im.save(buf, format="JPEG", quality=90)
+    # Panel is small; keep files light for SD + SPI.
+    im.save(buf, format="JPEG", quality=85, optimize=True)
     return buf.getvalue()
 
 
 class XaiImageProvider:
-    """POST https://api.x.ai/v1/images/edits with a base64 data URI."""
+    """POST https://api.x.ai/v1/images/edits; downscale result to input pixels."""
 
     def transform(self, *, image: bytes, prompt: str, image_cfg: dict[str, Any]) -> bytes:
         key = env_secret(image_cfg.get("api_key_env", "XAI_KEY"))
         if not key:
-            # Also accept XAI_API_KEY
             key = env_secret("XAI_API_KEY") or env_secret("XAI_KEY")
         if not key:
             raise RuntimeError("XAI_KEY missing — put it in repo .env")
 
+        in_size = _jpeg_size(image)
         base = (image_cfg.get("base_url") or "https://api.x.ai/v1").rstrip("/")
         model = (image_cfg.get("extra") or {}).get("model") or image_cfg.get(
             "model", "grok-imagine-image-2.0"
         )
         b64 = base64.b64encode(image).decode()
+        full_prompt = _FILTER_GUARD + prompt.strip()
+
         body: dict[str, Any] = {
             "model": model,
-            "prompt": prompt,
+            "prompt": full_prompt,
             "image": {
                 "url": f"data:image/jpeg;base64,{b64}",
                 "type": "image_url",
             },
             "response_format": "b64_json",
+            # Prefer the source framing; we still resize to exact input pixels.
+            "aspect_ratio": "auto",
         }
-        # Optional knobs from settings.image_api.extra
         extra = dict(image_cfg.get("extra") or {})
         for k in ("aspect_ratio", "resolution", "quality", "n"):
             if k in extra:
                 body[k] = extra[k]
+        # Default to cheapest/smallest gen; we resize locally to camera size.
+        body.setdefault("resolution", "1k")
+        body.setdefault("quality", "low")
 
         req = urllib.request.Request(
             f"{base}/images/edits",
@@ -82,8 +108,11 @@ class XaiImageProvider:
             raise RuntimeError(f"xAI image edit empty data: {payload!r}"[:400])
         item = data[0]
         if item.get("b64_json"):
-            return _to_jpeg(base64.b64decode(item["b64_json"]))
-        if item.get("url"):
+            out = base64.b64decode(item["b64_json"])
+        elif item.get("url"):
             with urllib.request.urlopen(item["url"], timeout=60) as img_resp:
-                return _to_jpeg(img_resp.read())
-        raise RuntimeError(f"xAI image edit missing b64/url: {list(item)}")
+                out = img_resp.read()
+        else:
+            raise RuntimeError(f"xAI image edit missing b64/url: {list(item)}")
+
+        return _to_jpeg(out, size=in_size)
