@@ -316,7 +316,9 @@ void runPipeline() {
   String bridgeErr;
   if (!Somnium::Host::cook(photo.data, photo.length, gMode.selected().id,
                            nullptr, Somnium::Defaults::kVenueLat,
-                           Somnium::Defaults::kVenueLon, dream, &bridgeErr)) {
+                           Somnium::Defaults::kVenueLon, dream, &bridgeErr,
+                           Somnium::Defaults::kDeviceId,
+                           Somnium::Defaults::kDreamBoard)) {
     Somnium::Console::printf("ERR bridge %s\n", bridgeErr.c_str());
     Somnium::Image::freePhoto(photo);
     char buf[40];

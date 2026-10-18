@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import binascii
 import json
+import re
 import sys
 import time
 import urllib.error
@@ -42,6 +43,20 @@ class ProtocolMismatchError(ProtocolError):
 
 class DeviceResetError(ProtocolError):
     pass
+
+
+# Same token rule as somnium_server.ids. Kept local so the bridge stays stdlib-only.
+_COOK_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+
+def optional_cook_id(meta: dict[str, str], key: str) -> str | None:
+    value = (meta.get(key) or "").strip()
+    if not value:
+        return None
+    if _COOK_ID.fullmatch(value) is None:
+        print(f"ignoring invalid {key}={value}", flush=True)
+        return None
+    return value
 
 
 class SerialLineReader:
@@ -108,6 +123,8 @@ def post_process(
     lon: str | None,
     url: str,
     timeout: float,
+    device_id: str | None = None,
+    board: str | None = None,
 ) -> bytes:
     from datetime import datetime, timezone
 
@@ -131,6 +148,10 @@ def post_process(
         field("lat", lat)
     if lon:
         field("lon", lon)
+    if device_id:
+        field("device_id", device_id)
+    if board:
+        field("board", board)
     parts.append(
         (
             f"--{boundary}\r\n"
@@ -306,8 +327,15 @@ def process_cook(
     try:
         meta = parse_cook_header(line)
         transaction_id = meta["id"]
+        device_id = optional_cook_id(meta, "device")
+        board = optional_cook_id(meta, "board")
+        extra = ""
+        if device_id:
+            extra += f" device={device_id}"
+        if board:
+            extra += f" board={board}"
         print(
-            f"COOK style={meta['style']} len={meta['len']} id={transaction_id}",
+            f"COOK style={meta['style']} len={meta['len']} id={transaction_id}{extra}",
             flush=True,
         )
         jpeg = receive_cook(ser, meta)
@@ -319,6 +347,8 @@ def process_cook(
             lon=meta.get("lon"),
             url=url,
             timeout=timeout,
+            device_id=device_id,
+            board=board,
         )
         send_dream(ser, dream, transaction_id, reader)
         print(f"DREAM {len(dream)} B accepted by ESP id={transaction_id}", flush=True)

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://somnium.photo/schema/style.json",
+  "title": "Somnium style",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+    },
+    "label": {"type": "string", "minLength": 1, "maxLength": 48},
+    "keywords": {"type": "string", "maxLength": 500},
+    "prompt": {
+      "type": "string",
+      "maxLength": 8000,
+      "description": "Template. Allowed variables: context, context_summary, variation, style_id, style_label, style_keywords, place, location_label, weather, day_part, temp_c, wind, moon, taken_at, negative, prompt, lat, lon. {context} is the lighting finish, not the raw weather summary."
+    },
+    "real": {"type": "boolean", "default": false},
+    "liberal": {"type": "boolean", "default": false},
+    "enabled": {"type": "boolean", "default": true},
+    "variations": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {"type": "string", "minLength": 1, "maxLength": 500}
+      }
+    },
+    "preview": {"type": "string", "maxLength": 200},
+    "tint": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {"type": "integer", "minimum": 0, "maximum": 255}
+    },
+    "negative": {"type": "string", "maxLength": 500},
+    "tuning": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "strength": {"type": "number", "minimum": 0, "maximum": 1},
+        "temperature": {"type": "number", "minimum": 0, "maximum": 2},
+        "top_p": {"type": "number", "minimum": 0, "maximum": 1},
+        "prompt_model": {"type": "string", "minLength": 1, "maxLength": 80},
+        "image_model": {"type": "string", "minLength": 1, "maxLength": 80},
+        "negative": {"type": "string", "minLength": 1, "maxLength": 500}
+      }
+    }
+  }
+}

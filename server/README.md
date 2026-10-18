@@ -8,6 +8,12 @@ Saved shots go to `server/outputs/`. `output_dir` in
 [`settings.json`](settings.json) is `outputs`, and the pipeline resolves that
 relative to the `server/` directory.
 
+Styles are a registry: `creative/creative.json` modes, then JSON in
+`styles/user/`, then `user_styles` and `style_plugins` in settings. See
+[STYLE_ENGINE.md](STYLE_ENGINE.md). Several cameras share this server by
+sending `device_id` and `board`. Shot JSON carries both so the uploader below
+can hand them to the gallery. See [MULTI_CAMERA.md](MULTI_CAMERA.md).
+
 ## Gallery auto-upload
 
 Each shot can be sent to the gallery. Nothing is uploaded unless both

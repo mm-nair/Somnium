@@ -178,6 +178,9 @@ void verifyTransfer(const std::string &scenario) {
     std::abort();
   }
   assert(headerSent);
+  assert(Serial.outgoing.find("COOK style=anime ") != std::string::npos);
+  assert(Serial.outgoing.find(" device=") == std::string::npos);
+  assert(Serial.outgoing.find(" board=") == std::string::npos);
   assert((Serial.outgoing.find("ACK DREAM ") != std::string::npos) == expected);
   if (expected) {
     assert(payloadSent);

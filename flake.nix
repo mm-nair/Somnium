@@ -19,6 +19,7 @@
           uvicorn
           pyyaml
           python-multipart
+          httpx
         ]
       );
       # settings.json output_dir "outputs" is resolved next to the server package:

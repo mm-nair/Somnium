@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from somnium_server.devices import DeviceError
+from somnium_server.ids import valid_id
 from somnium_server.mood_artifacts import apply_mood_artifacts
 from somnium_server.providers.registry import build_stack
 
@@ -40,6 +42,7 @@ class Pipeline:
             out = Path(__file__).resolve().parent.parent / out
         out.mkdir(parents=True, exist_ok=True)
         self.output_dir = out
+        self.devices = cfg.get("_devices")
 
     def process(
         self,
@@ -51,18 +54,42 @@ class Pipeline:
         lat: float | None = None,
         lon: float | None = None,
         force_real: bool = False,
+        device_id: str | None = None,
+        board: str | None = None,
     ) -> ProcessResult:
+        device_id = _clean_token(device_id, "device_id")
+        board = _clean_token(board, "board")
         styles = self.cfg.get("styles") or {}
+        requested = style_id
+        location_label = None
+        if self.devices is not None and (device_id or board):
+            identity = self.devices.resolve(
+                device_id=device_id,
+                board=board,
+                style_id=style_id,
+                styles=styles,
+                lat=lat,
+                lon=lon,
+            )
+            device_id = identity.device_id
+            board = identity.board
+            style_id = identity.style_id
+            lat = identity.lat
+            lon = identity.lon
+            location_label = identity.location_label
         if style_id not in styles:
-            style_id = next(iter(styles), "cartoon")
+            style_id = next(iter(styles), "popcomic")
         style = styles.get(style_id, {"label": style_id, "keywords": ""})
 
+        location_cfg = dict(self.cfg.get("location") or {})
+        if location_label:
+            location_cfg["default_label"] = location_label
         context = self.stack["context"].enrich(
             taken_at=taken_at,
             client_ip=client_ip,
             lat=lat,
             lon=lon,
-            location_cfg=self.cfg.get("location") or {},
+            location_cfg=location_cfg,
             context_cfg=self.cfg.get("context") or {},
         )
         # Mood watermark → concrete optical artifacts (editable in creative.json).
@@ -87,18 +114,17 @@ class Pipeline:
             style_id=style_id,
             style=style,
             context=context,
-            prompt_cfg=self.cfg.get("prompt") or {},
+            prompt_cfg=_prompt_cfg_for(style, self.cfg.get("prompt") or {}),
         )
+        image_prompt = _image_prompt(prompt, style)
+        augmented = image_prompt != prompt
 
         use_real = force_real or bool(style.get("real"))
         if use_real:
-            image_cfg = dict(self.cfg.get("image") or {})
-            if style.get("liberal"):
-                image_cfg["liberal"] = True
             result_image = self.stack["image"].transform(
                 image=image,
-                prompt=prompt,
-                image_cfg=image_cfg,
+                prompt=image_prompt,
+                image_cfg=_image_cfg_for(style, self.cfg.get("image") or {}),
             )
         else:
             result_image = image
@@ -122,21 +148,29 @@ class Pipeline:
         # Dual slideshow on the ThinkPad: …_0_orig then …_1_dream.
         orig_path.write_bytes(image)
         dream_path.write_bytes(result_image)
-        meta_path.write_text(
-            json.dumps(
-                {
-                    "style_id": style_id,
-                    "prompt": prompt,
-                    "context": context,
-                    "taken_at": taken_at or context.get("taken_at"),
-                    "files": {
-                        "orig": orig_path.name,
-                        "dream": dream_path.name,
-                    },
-                },
-                indent=2,
-            )
-        )
+        record: dict[str, Any] = {
+            "style_id": style_id,
+            "style_requested": requested,
+            "prompt": prompt,
+            "context": context,
+            "taken_at": taken_at or context.get("taken_at"),
+            "device_id": device_id,
+            "board": board,
+            "files": {
+                "orig": orig_path.name,
+                "dream": dream_path.name,
+            },
+        }
+        if style.get("source"):
+            record["style_source"] = style["source"]
+        if style.get("negative"):
+            record["negative"] = style["negative"]
+        tuning = style.get("tuning") or {}
+        if tuning:
+            record["tuning"] = tuning
+        if augmented:
+            record["image_prompt"] = image_prompt
+        meta_path.write_text(json.dumps(record, indent=2))
         # Optional gallery upload. Must not delay or fail the shot.
         _start_gallery_upload(
             orig_path=orig_path,
@@ -155,8 +189,66 @@ class Pipeline:
                 "saved_stem": stem,
                 "orig_path": str(orig_path),
                 "dream_path": str(dream_path),
+                "device_id": device_id,
+                "board": board,
+                "style_requested": requested,
             },
         )
+
+
+def _clean_token(value: str | None, label: str) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if not valid_id(text):
+        raise DeviceError(f"invalid {label}")
+    return text
+
+
+def _prompt_cfg_for(style: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
+    prompt_cfg = dict(base)
+    tuning = style.get("tuning") or {}
+    if "temperature" in tuning:
+        prompt_cfg["temperature"] = float(tuning["temperature"])
+        prompt_cfg["temperature_locked"] = True
+    if tuning.get("prompt_model"):
+        prompt_cfg["model"] = tuning["prompt_model"]
+    if "top_p" in tuning:
+        prompt_cfg["top_p"] = float(tuning["top_p"])
+    return prompt_cfg
+
+
+def _image_cfg_for(style: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
+    image_cfg = dict(base)
+    if style.get("liberal"):
+        image_cfg["liberal"] = True
+    tuning = style.get("tuning") or {}
+    if tuning.get("image_model"):
+        extra = dict(image_cfg.get("extra") or {})
+        extra["model"] = tuning["image_model"]
+        image_cfg["extra"] = extra
+        image_cfg["model"] = tuning["image_model"]
+    return image_cfg
+
+
+def _image_prompt(prompt: str, style: dict[str, Any]) -> str:
+    """Append per-style guidance the image model should see.
+
+    grok-imagine-image edits has no public strength field, so strength is a
+    sentence on the edit prompt. Built-in modes leave this equal to `prompt`.
+    """
+    tuning = style.get("tuning") or {}
+    negative = style.get("negative") or tuning.get("negative") or ""
+    lines: list[str] = []
+    if negative and negative not in prompt:
+        lines.append(f"Avoid: {negative}")
+    if "strength" in tuning:
+        lines.append(f"Stylization strength {float(tuning['strength']):.2f} on a 0 to 1 scale.")
+    if not lines:
+        return prompt
+    return prompt.rstrip() + "\n" + "\n".join(lines)
 
 
 def _start_gallery_upload(

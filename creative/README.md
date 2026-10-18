@@ -40,6 +40,12 @@ keeping the same crop.
 2. `./scripts/sync_creative.sh`
 3. Re-flash. Server picks up JSON on restart (no sync needed for Python).
 
+Server-only styles do not need a flash. Put a JSON file in `server/styles/user/`
+or list a plugin in `server/settings.json`, then `POST /v1/styles/reload`.
+The schema, template variables, and per-style tuning are documented in
+[server/STYLE_ENGINE.md](../server/STYLE_ENGINE.md). `creative.json` modes stay
+the built-in set and still win only until a later file replaces the same id.
+
 ## Change colors / font / logo
 
 - **Colors** — `theme` RGB triples in `creative.json`

@@ -59,6 +59,8 @@ def cook_local(
     lon: float | None,
     force_real: bool,
     out_dir: Path,
+    device_id: str | None = None,
+    board: str | None = None,
 ) -> int:
     sys.path.insert(0, str(ROOT / "server"))
     from somnium_server.config import load_config
@@ -81,6 +83,8 @@ def cook_local(
         lat=lat,
         lon=lon,
         force_real=force_real,
+        device_id=device_id,
+        board=board,
     )
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -106,6 +110,8 @@ def cook_http(
     force_real: bool,
     base_url: str,
     out_dir: Path,
+    device_id: str | None = None,
+    board: str | None = None,
 ) -> int:
     import urllib.error
     import urllib.request
@@ -121,6 +127,10 @@ def cook_http(
         fields.append(("lon", str(lon)))
     if force_real:
         fields.append(("force_real", "1"))
+    if device_id:
+        fields.append(("device_id", device_id))
+    if board:
+        fields.append(("board", board))
 
     try:
         raw = _to_jpeg(image_path.read_bytes())
@@ -202,6 +212,8 @@ def main() -> int:
     )
     p.add_argument("--lat", type=float, default=None)
     p.add_argument("--lon", type=float, default=None)
+    p.add_argument("--device", default=None, help="Camera id, for example cam-kitchen")
+    p.add_argument("--board", default=None, help="Dream board name, for example table")
     p.add_argument(
         "--local",
         action="store_true",
@@ -237,6 +249,8 @@ def main() -> int:
                 args.lon,
                 force_real,
                 out_dir,
+                args.device,
+                args.board,
             )
         else:
             code = cook_http(
@@ -248,6 +262,8 @@ def main() -> int:
                 force_real,
                 args.http,
                 out_dir,
+                args.device,
+                args.board,
             )
         if code != 0:
             rc = code

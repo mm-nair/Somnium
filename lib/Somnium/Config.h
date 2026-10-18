@@ -54,6 +54,13 @@ constexpr uint32_t kCookTimeoutMs = 300000;
 constexpr float kVenueLat = 47.6553f;
 constexpr float kVenueLon = -122.3035f;
 
+// Multi-camera identity. Empty omits the COOK fields, which is today's
+// single-camera behavior. Set a unique id per flashed board, for example
+// "cam-kitchen", and optionally a shared dream board such as "table".
+// Tokens are letters, digits, '.', '_' and '-'. No spaces.
+constexpr char kDeviceId[] = "";
+constexpr char kDreamBoard[] = "";
+
 }  // namespace Defaults
 }  // namespace Somnium
 

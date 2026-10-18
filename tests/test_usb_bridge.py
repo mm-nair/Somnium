@@ -306,6 +306,52 @@ class UsbBridgeTests(unittest.TestCase):
         ser = SerialStub([b"OK cooktest 11\n"])
         usb_cooktest.wait_cooktest(usb_bridge.SerialLineReader(ser), 0.1)
 
+    def test_device_and_board_are_forwarded(self):
+        header = self.cook_header() + " device=cam-kitchen board=table"
+        ser = SerialStub([self.jpeg, b"\nCOOK_END\n"], self.reply_to_dream)
+        backend = patch.object(usb_bridge, "post_process", return_value=self.jpeg).start()
+        self.process_cook(ser, header)
+        self.assertEqual(backend.call_args.kwargs["device_id"], "cam-kitchen")
+        self.assertEqual(backend.call_args.kwargs["board"], "table")
+        self.assertIn("device=cam-kitchen", self.output.getvalue())
+        self.assertIn("board=table", self.output.getvalue())
+
+    def test_invalid_device_token_is_ignored(self):
+        header = self.cook_header() + " device=bad/id board=table"
+        ser = SerialStub([self.jpeg, b"\nCOOK_END\n"], self.reply_to_dream)
+        backend = patch.object(usb_bridge, "post_process", return_value=self.jpeg).start()
+        self.process_cook(ser, header)
+        self.assertIsNone(backend.call_args.kwargs["device_id"])
+        self.assertEqual(backend.call_args.kwargs["board"], "table")
+        self.assertIn("ignoring invalid device", self.output.getvalue())
+
+    def test_post_process_form_includes_device_and_board(self):
+        seen = {}
+
+        def capture(request, timeout=None):
+            del timeout
+            seen["data"] = request.data
+            raise urllib.error.URLError("stop")
+
+        with patch.object(usb_bridge.urllib.request, "urlopen", capture):
+            with self.assertRaises(urllib.error.URLError):
+                usb_bridge.post_process(
+                    self.jpeg,
+                    style="anime",
+                    taken_at="2026-10-17T19:30:00Z",
+                    lat=None,
+                    lon=None,
+                    url="http://127.0.0.1/v1/process",
+                    timeout=1,
+                    device_id="cam-a",
+                    board="table",
+                )
+        body = seen["data"]
+        self.assertIn(b'name="device_id"', body)
+        self.assertIn(b"cam-a", body)
+        self.assertIn(b'name="board"', body)
+        self.assertIn(b"table", body)
+
 
 if __name__ == "__main__":
     unittest.main()
