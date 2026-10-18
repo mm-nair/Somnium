@@ -25,10 +25,14 @@ JPEG + style  (USB COOK from ESP)
 ESP → laptop:
 
 ```
-COOK style=<style> len=<n> id=<request> crc=<crc32> lat=… lon=…
+COOK style=<style> len=<n> id=<request> crc=<crc32> lat=… lon=… device=<id> board=<name>
 <n jpeg bytes>
 COOK_END
 ```
+
+`device` and `board` are optional. Older firmware omits them. Tokens are
+letters, digits, `.`, `_`, and `-`. The bridge forwards them as `device_id`
+and `board` on `POST /v1/process`. Details: [server/MULTI_CAMERA.md](server/MULTI_CAMERA.md).
 
 Laptop → ESP:
 
@@ -82,9 +86,26 @@ nix develop -c python -m unittest discover -s tests -p 'test_*.py' -v
 
 ## HTTP (laptop local)
 
-`POST /v1/process` multipart: `image`, `style`, `taken_at`, optional `lat`/`lon`.
+`POST /v1/process` multipart: `image`, `style`, `taken_at`, optional `lat`/`lon`,
+optional `device_id` and `board`.
 
-Response: JPEG + headers `X-Somnium-Prompt`, `X-Somnium-Context`, …
+Response: JPEG + headers `X-Somnium-Prompt`, `X-Somnium-Context`,
+`X-Somnium-Style`, and `X-Somnium-Device` / `X-Somnium-Board` when set.
+
+Style registry and scene-preservation eval: [server/STYLE_ENGINE.md](server/STYLE_ENGINE.md).
+
+```sh
+PYTHONPATH=server python -m somnium_server.eval pair orig.jpg dream.jpg
+PYTHONPATH=server python -m somnium_server.eval mock photo.jpg --style pencil
+SOMNIUM_EVAL_LIVE=1 PYTHONPATH=server python -m somnium_server.eval live photo.jpg
+```
+
+| Method | Path |
+| --- | --- |
+| GET | `/v1/styles`, `/v1/styles/{id}` |
+| POST | `/v1/styles/reload` |
+| GET, POST, PATCH | `/v1/devices`, `/v1/devices/{id}` |
+| GET, POST | `/v1/boards`, `/v1/boards/{id}`, `/v1/boards/{id}/shots` |
 
 ## Config map
 
@@ -97,5 +118,5 @@ Response: JPEG + headers `X-Somnium-Prompt`, `X-Somnium-Context`, …
 ## Camera-free cook
 
 ```sh
-./scripts/cook.sh photo.jpg --style noir --at 2026-10-17T19:30:00Z
+./scripts/cook.sh photo.jpg --style watercolor --at 2026-10-17T19:30:00Z
 ```

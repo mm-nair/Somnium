@@ -61,6 +61,8 @@ The server is a FastAPI app with one endpoint, `POST /v1/process`. The body is m
 
 Each shot also leaves three files in `server/outputs/`: the original, the dream, and a JSON sidecar with the full prompt and context. The HTTP prompt header is plain ASCII and truncated. A generated prompt with a stray character was rejected by the HTTP stack after the image had already been made, so the header is a preview and the JSON is the record.
 
+The server can load extra styles from `server/styles/user/` without a flash, and more than one camera can share it. Each shot JSON then carries `device_id` and `board` for the gallery upload. [server/STYLE_ENGINE.md](server/STYLE_ENGINE.md) and [server/MULTI_CAMERA.md](server/MULTI_CAMERA.md) describe both.
+
 The same pipeline runs without the camera:
 
 ```sh

@@ -9,6 +9,8 @@ The FastAPI pipeline writes three files per shot into its output directory:
 
 `upload_shot` posts that trio to the gallery's `/api/upload` route. Watch mode
 polls an outputs directory, so the Somnium repo does not need to change.
+The meta JSON may include `device_id` and `board`. Those fields ride along in
+the `meta` part; the uploader does not need to know them.
 `delete` removes one shot with DELETE <upload-url>?id=<id>.
 
 Environment (laptop):

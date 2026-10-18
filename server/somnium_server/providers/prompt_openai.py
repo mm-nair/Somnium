@@ -38,9 +38,9 @@ class OpenAICompatPromptProvider:
             if liberal
             else "Keep the source rendering and apply the specified finish."
         )
-        temp = prompt_cfg.get("temperature", 0.45)
-        if liberal:
-            temp = min(0.75, float(temp) + 0.15)
+        temp = float(prompt_cfg.get("temperature", 0.45))
+        if liberal and not prompt_cfg.get("temperature_locked"):
+            temp = min(0.75, temp + 0.15)
         body = {
             "model": prompt_cfg.get("model", "gpt-4o-mini"),
             "temperature": temp,
@@ -56,6 +56,8 @@ class OpenAICompatPromptProvider:
                 },
             ],
         }
+        if "top_p" in prompt_cfg:
+            body["top_p"] = float(prompt_cfg["top_p"])
         req = urllib.request.Request(
             f"{base}/chat/completions",
             data=json.dumps(body).encode(),

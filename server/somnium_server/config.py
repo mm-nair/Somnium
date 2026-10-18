@@ -44,13 +44,41 @@ def _load_json(path: Path) -> dict[str, Any]:
         return json.load(fh)
 
 
+def _server_path(value: str) -> Path:
+    path = Path(value)
+    if not path.is_absolute():
+        path = ROOT / path
+    return path
+
+
 def load_config() -> dict[str, Any]:
     """Merge creative.json (edit this!) with settings.json (plumbing)."""
+    from somnium_server.devices import DeviceDirectory
+    from somnium_server.styles.registry import StyleRegistry
+
     load_dotenv()
     creative = _load_json(CREATIVE_PATH)
     settings = _load_json(SETTINGS_PATH) if SETTINGS_PATH.is_file() else {}
 
-    modes = {m["id"]: m for m in creative.get("modes", [])}
+    styles_dir = _server_path(settings.get("styles_dir", "styles/user"))
+    registry = StyleRegistry(
+        creative=creative,
+        styles_dir=styles_dir,
+        user_styles=list(settings.get("user_styles") or []),
+        plugins=list(settings.get("style_plugins") or []),
+    )
+    devices_path = _server_path(settings.get("devices_file", "devices.json"))
+    seed: dict[str, Any] | None = None
+    if not devices_path.is_file():
+        seed_path = _server_path(settings.get("devices_seed", "devices.example.json"))
+        if seed_path.is_file():
+            try:
+                loaded = _load_json(seed_path)
+            except (OSError, json.JSONDecodeError):
+                loaded = {}
+            seed = loaded if isinstance(loaded, dict) else {}
+    devices = DeviceDirectory(devices_path, seed=seed)
+
     models = creative.get("models") or {}
     venue = settings.get("venue") or {}
     prompt_api = settings.get("prompt_api") or {}
@@ -70,17 +98,9 @@ def load_config() -> dict[str, Any]:
             "default_lon": venue.get("lon", 0),
             "default_label": venue.get("label", "Somnium"),
         },
-        "styles": {
-            mid: {
-                "label": m.get("label", mid),
-                "keywords": m.get("keywords", ""),
-                "prompt": m.get("prompt", ""),
-                "real": bool(m.get("real", False)),
-                "liberal": bool(m.get("liberal", False)),
-                "variations": m.get("variations", {}),
-            }
-            for mid, m in modes.items()
-        },
+        "styles": registry.as_map(),
+        "_style_registry": registry,
+        "_devices": devices,
         "prompt": {
             "provider": models.get("prompt_provider", "template"),
             "model": prompt_api.get("model", "grok-3-mini"),

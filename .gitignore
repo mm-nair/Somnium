@@ -4,6 +4,7 @@
 .vscode/launch.json
 .vscode/ipch
 server/outputs/
+server/devices.json
 proc_output/
 .env
 *.jpg

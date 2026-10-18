@@ -1,0 +1,34 @@
+{
+  "devices": {
+    "cam-kitchen": {
+      "name": "Kitchen",
+      "default_style": "watercolor",
+      "enabled_styles": ["watercolor", "pencil", "anime"],
+      "default_board": "table",
+      "location": {
+        "lat": 47.6553,
+        "lon": -122.3035,
+        "label": "Kitchen",
+        "override": true
+      }
+    },
+    "cam-bar": {
+      "name": "Bar",
+      "default_style": "popcomic",
+      "enabled_styles": ["popcomic", "surprise", "anime"],
+      "default_board": "table",
+      "location": {
+        "lat": 47.6601,
+        "lon": -122.313,
+        "label": "Bar",
+        "override": true
+      }
+    }
+  },
+  "boards": {
+    "table": {
+      "name": "Table",
+      "members": ["cam-kitchen", "cam-bar"]
+    }
+  }
+}

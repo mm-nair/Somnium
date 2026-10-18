@@ -2,6 +2,10 @@
   "host": "0.0.0.0",
   "port": 8080,
   "output_dir": "outputs",
+  "styles_dir": "styles/user",
+  "style_plugins": [],
+  "devices_file": "devices.json",
+  "devices_seed": "devices.example.json",
   "venue": {
     "lat": 47.6553,
     "lon": -122.3035,

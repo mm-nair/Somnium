@@ -18,6 +18,22 @@
 namespace Somnium {
 namespace {
 
+bool cookToken(const char *value) {
+  if (value == nullptr || value[0] == '\0') {
+    return false;
+  }
+  size_t length = 0;
+  for (const char *cursor = value; *cursor != '\0'; ++cursor, ++length) {
+    const char c = *cursor;
+    const bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-';
+    if (!ok || length >= 64) {
+      return false;
+    }
+  }
+  return true;
+}
+
 bool gCooking = false;
 Host::PumpFn gPump = nullptr;
 
@@ -125,7 +141,8 @@ void handleLine(char *line) {
     String err;
     const bool ok =
         Host::cook(photo.data, photo.length, "anime", nullptr,
-                   Defaults::kVenueLat, Defaults::kVenueLon, dream, &err);
+                   Defaults::kVenueLat, Defaults::kVenueLon, dream, &err,
+                   Defaults::kDeviceId, Defaults::kDreamBoard);
     Image::freePhoto(photo);
     if (!ok) {
       Console::printf("ERR cooktest %s\n", err.c_str());
@@ -348,7 +365,7 @@ void Host::poll() {
 
 bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
                 const char *takenAt, float lat, float lon, JpegBuffer &outDream,
-                String *err) {
+                String *err, const char *deviceId, const char *boardId) {
   outDream = JpegBuffer{};
   if (jpeg == nullptr || jpegLen == 0) {
     if (err != nullptr) {
@@ -364,13 +381,19 @@ bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
   const unsigned requestId = esp_random();
   const unsigned jpegCrc = esp_rom_crc32_le(0, jpeg, jpegLen);
   Serial.printf("COOK style=%s len=%u id=%08x crc=%08x",
-                styleId != nullptr ? styleId : "cartoon",
+                styleId != nullptr ? styleId : "popcomic",
                 static_cast<unsigned>(jpegLen), requestId, jpegCrc);
   if (takenAt != nullptr && takenAt[0] != '\0') {
     Serial.printf(" taken_at=%s", takenAt);
   }
   if (!isnan(lat) && !isnan(lon)) {
     Serial.printf(" lat=%.5f lon=%.5f", lat, lon);
+  }
+  if (cookToken(deviceId)) {
+    Serial.printf(" device=%s", deviceId);
+  }
+  if (cookToken(boardId)) {
+    Serial.printf(" board=%s", boardId);
   }
   Serial.print("\n");
   Serial.write(jpeg, jpegLen);
