@@ -2,6 +2,8 @@
 
 AI art takes 5 steps. Somnium takes 1 click. Photos from the camera are up at [somnium.photo](https://somnium.photo).
 
+The name is Latin for "dream." You press the shutter, and the picture that comes back is the dream of what you just saw. Johannes Kepler's *Somnium* (1634) is often called the first science-fiction novel: a dream of traveling to the Moon and looking back at the Earth.
+
 ## The problem
 
 Getting an AI picture of something you just saw is a chore. On a phone it goes like this:
