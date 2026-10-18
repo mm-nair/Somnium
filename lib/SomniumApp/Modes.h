@@ -20,6 +20,7 @@ constexpr Mode kModes[] = {
     {"cyberpunk", "CYBER", 0x06FF},
     {"watercolor", "WASH", 0xFD07},
     {"gourmet", "GOURMET", 0xFEEA},
+    {"anime", "ANIME", 0xFBD9},
 };
 constexpr int kModeCount = sizeof(kModes) / sizeof(kModes[0]);
 

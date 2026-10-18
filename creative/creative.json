@@ -17,6 +17,86 @@
     "pinkDim": [200, 80, 140],
     "muted": [140, 110, 125]
   },
+  "mood_artifacts": {
+    "pick": 1,
+    "always": [],
+    "pools": {
+      "night": [
+        "hint of cool moonlit shadow lift",
+        "very light film grain in the darks",
+        "soft corner vignette"
+      ],
+      "day": [
+        "gentle sun-kissed highlight bloom",
+        "faint warm lens flare tick",
+        "slightly airier bright areas"
+      ],
+      "clear": [
+        "crisper midtone contrast",
+        "barely-there chromatic fringe on edges"
+      ],
+      "clearish": [
+        "soft specular sparkle on an existing highlight",
+        "light sun warmth on midtones"
+      ],
+      "cloud": [
+        "softer diffused shadows",
+        "slightly cooler lifted blacks"
+      ],
+      "heavy_cloud": [
+        "muted overcast grade",
+        "gentler desaturated midtones"
+      ],
+      "overcast": [
+        "soft flat light grade",
+        "chalky low-contrast highlights"
+      ],
+      "rain": [
+        "cool damp cyan-green grade",
+        "faint wet sheen on already-shiny surfaces"
+      ],
+      "drizzle": [
+        "soft mist bloom in the air",
+        "light haze over distant parts of the frame"
+      ],
+      "snow": [
+        "cold blue-white grade",
+        "a few sparse bright flecks (keep subtle)"
+      ],
+      "fog": [
+        "soft dream haze",
+        "lower contrast with milky lift"
+      ],
+      "thunder": [
+        "cooler edge light",
+        "slightly crunchier ISO grain"
+      ],
+      "cold": [
+        "icy blue shadow tint",
+        "cooler midtones"
+      ],
+      "warm": [
+        "gentle golden midtone warmth",
+        "soft warm highlight roll-off"
+      ],
+      "windy": [
+        "tiny motion softness on loose edges",
+        "light handheld grain"
+      ],
+      "full_moon": [
+        "pale silvery lift in highlights",
+        "soft cool edge light"
+      ],
+      "new_moon": [
+        "deeper blacks",
+        "quiet dark vignette"
+      ],
+      "moonlit": [
+        "cool tint in the shadows",
+        "soft nocturnal grain"
+      ]
+    }
+  },
   "modes": [
     {
       "id": "noir",
@@ -24,7 +104,7 @@
       "real": true,
       "tint": [80, 80, 90],
       "keywords": "high-contrast B&W grade, crushed blacks, silver gelatin grain",
-      "prompt": "Apply a film-noir COLOR GRADE only: black and white, high contrast, slight grain. Do not add or remove objects. Context mood: {context}."
+      "prompt": "Apply a film-noir grade. Same crop and subjects. Subtly include mood: {context}."
     },
     {
       "id": "cartoon",
@@ -32,7 +112,7 @@
       "real": true,
       "tint": [220, 80, 180],
       "keywords": "cel-shaded color grade, soft outlines, flat pastel tones",
-      "prompt": "Apply a gentle cartoon FILTER only: slightly flatter colors, soft outline feel. Same scene, same objects. Context mood: {context}."
+      "prompt": "Apply a gentle cartoon grade. Same crop. Subtly include mood: {context}."
     },
     {
       "id": "cyberpunk",
@@ -40,15 +120,15 @@
       "real": true,
       "tint": [0, 220, 255],
       "keywords": "magenta/cyan grade, neon edge light, cool shadows",
-      "prompt": "Apply a cyberpunk COLOR GRADE only: magenta/cyan cast, cooler shadows. Do not invent neon signs or new scenery. Context mood: {context}."
+      "prompt": "Apply a cyberpunk color grade. Same crop. Subtly include mood: {context}."
     },
     {
       "id": "watercolor",
       "label": "WASH",
       "real": true,
       "tint": [255, 160, 60],
-      "keywords": "soft watercolor wash over existing pixels, paper tooth",
-      "prompt": "Apply a light watercolor FILTER only over the existing photo. Keep every object in place. Context mood: {context}."
+      "keywords": "soft watercolor wash, paper tooth, pigment blooms",
+      "prompt": "Apply a light watercolor wash. Same crop. Subtly include mood: {context}."
     },
     {
       "id": "gourmet",
@@ -56,10 +136,19 @@
       "real": true,
       "tint": [255, 220, 80],
       "keywords": "warm editorial grade, richer contrast, appetizing color",
-      "prompt": "Apply a gourmet food-magazine COLOR GRADE only: warmer light, richer contrast. No new props. Context mood: {context}."
+      "prompt": "Apply a gourmet editorial grade. Same crop. Subtly include mood: {context}."
+    },
+    {
+      "id": "anime",
+      "label": "ANIME",
+      "real": true,
+      "liberal": true,
+      "tint": [255, 120, 200],
+      "keywords": "anime cel shade, expressive eyes, clean linework, soft screen-tone, vibrant palette",
+      "prompt": "Restyle as anime illustration: cel shading, clean linework, expressive features, richer color. Same crop/framing — do not invent a new background scene — but you MAY more freely reinterpret materials, faces, lighting, and small atmospheric details. Mood: {context}."
     }
   ],
-  "prompt_system": "You write one short IMAGE FILTER prompt for Somnium.\nThis is a style filter on an existing photo — NOT a new generation.\nHard rules for the prompt you output:\n- Change only look: color grade, contrast, grain, palette, mild stylization.\n- Keep the EXACT same framing, subjects, objects, and background content.\n- Do NOT add text, logos, moons, stars, windows, people, props, or sky replacements.\n- Do NOT extend, invent, or collage new scenery.\n- Weather/day-night context may only nudge grade (cooler/warmer, darker/brighter), never invent celestial bodies or weather effects that are not already in the photo.\nOutput ONLY the filter prompt text.",
+  "prompt_system": "You write one short img2img EDIT prompt for Somnium.\n\nDefault balance:\n- Keep the SAME crop and recognizable subjects. Do not expand the frame or invent a new background scene.\n- Prefer style grade + subtle optical mood (grain, glare kiss, vignette, cool/warm tint, light haze).\n- At most a whisper of extra atmosphere — never dominant new props or scenery.\n- NEVER instruct adding readable text, logos, captions, watermarks, or place/event names.\n- Mention mood/weather lightly — optical only, not written words.\n\nIf the style draft says liberal stylization is allowed (e.g. anime), you may push the look harder: stronger stylization of faces/materials/lighting and a few small atmospheric flourishes — still same crop, no full scene rewrite, no text.\n\nOutput ONLY the edit prompt text.",
   "models": {
     "prompt_provider": "openai_compat",
     "image_provider": "xai",

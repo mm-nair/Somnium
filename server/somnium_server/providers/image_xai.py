@@ -11,12 +11,21 @@ from typing import Any
 
 from somnium_server.config import env_secret
 
-# Prepended so the image model treats the request as a grade/filter, not a redo.
+# Default: grade + subtle optical mood; no scene rewrite.
 _FILTER_GUARD = (
-    "Style filter only. Preserve the exact same photograph: same crop, subjects, "
-    "objects, and background. Change color grade / contrast / texture only. "
-    "Do not add, remove, invent, or extend any content. No new text, sky, moons, "
-    "props, or scenery. "
+    "Restyle this photo in-place. Keep the same crop and main subjects. "
+    "Apply the style grade plus subtle optical mood (soft glare, light grain, "
+    "vignette, tint, haze) — keep artifacts quiet, not the focus. "
+    "Do not expand the frame or invent a new background scene. "
+    "Do not add any readable text, logos, captions, or watermarks. "
+)
+
+# Liberal styles (e.g. anime): stronger stylization, still same crop.
+_LIBERAL_GUARD = (
+    "Restyle this photo as a bold illustration in-place. Keep the same crop "
+    "and recognizable subjects/layout. You may freely stylize faces, materials, "
+    "lighting, and small atmospheric details. Do not expand the frame or replace "
+    "the background with a wholly new scene. No readable text, logos, or captions. "
 )
 
 
@@ -63,7 +72,8 @@ class XaiImageProvider:
             "model", "grok-imagine-image-2.0"
         )
         b64 = base64.b64encode(image).decode()
-        full_prompt = _FILTER_GUARD + prompt.strip()
+        guard = _LIBERAL_GUARD if image_cfg.get("liberal") else _FILTER_GUARD
+        full_prompt = guard + prompt.strip()
 
         body: dict[str, Any] = {
             "model": model,

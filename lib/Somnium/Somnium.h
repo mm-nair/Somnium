@@ -17,13 +17,19 @@ namespace Somnium {
 
 inline bool begin() {
   Console::begin(Defaults::kSerialBaud);
+  Console::println("boot");
   Inputs::begin();
-  Display::begin();
-  Storage::begin();
-  const bool cameraOk = Camera::begin(Defaults::kCameraWidth);
+  // Wi‑Fi BEFORE camera: Freenove S3 CAM XCLK kills RF if camera inits first.
   if (Wifi::begin()) {
     TimeSync::begin();
   }
+  Console::println("inputs+wifi");
+  Display::begin();
+  Console::println("display");
+  Storage::begin();
+  Console::println("storage");
+  const bool cameraOk = Camera::begin(Defaults::kCameraWidth);
+  Console::println(cameraOk ? "camera ok" : "camera fail");
   Console::println("READY");
   return cameraOk;
 }

@@ -51,7 +51,6 @@ void rescan() {
   while (entry && gCount < kMaxPhotos) {
     if (!entry.isDirectory()) {
       const char *name = entry.name();
-      // SD_MMC may return "/somnium/foo.jpg" or just "foo.jpg"
       const char *base = name;
       if (const char *slash = strrchr(name, '/')) {
         base = slash + 1;
@@ -70,7 +69,6 @@ void rescan() {
     entry = dir.openNextFile();
   }
   dir.close();
-  // Alphabetical so …_0_orig then …_1_dream alternate when dialing.
   if (gCount > 1) {
     qsort(gPaths, static_cast<size_t>(gCount), sizeof(gPaths[0]), pathCmp);
   }
@@ -92,25 +90,79 @@ bool Storage::begin() {
   }
   gReady = true;
   SD_MMC.mkdir("/somnium");
-  clearList();
-  Console::println("SD ready");
+  // Fresh session: drop any leftover/corrupt JPEGs from prior runs.
+  clearGallery();
+  Console::println("SD ready (gallery wiped)");
   return true;
 }
 
 bool Storage::ready() { return gReady; }
 
+void Storage::clearGallery() {
+  if (!gReady) {
+    return;
+  }
+  // Collect paths first — removing while iterating SD_MMC dirs is flaky.
+  char doomed[kMaxPhotos][64];
+  int nDoomed = 0;
+  File dir = SD_MMC.open("/somnium");
+  if (dir && dir.isDirectory()) {
+    File entry = dir.openNextFile();
+    while (entry && nDoomed < kMaxPhotos) {
+      if (!entry.isDirectory()) {
+        const char *name = entry.name();
+        const char *base = name;
+        if (const char *slash = strrchr(name, '/')) {
+          base = slash + 1;
+        }
+        if (endsWithJpg(base)) {
+          if (name[0] == '/') {
+            strncpy(doomed[nDoomed], name, sizeof(doomed[nDoomed]) - 1);
+          } else {
+            snprintf(doomed[nDoomed], sizeof(doomed[nDoomed]), "/somnium/%s",
+                     base);
+          }
+          doomed[nDoomed][sizeof(doomed[nDoomed]) - 1] = '\0';
+          nDoomed += 1;
+        }
+      }
+      entry.close();
+      entry = dir.openNextFile();
+    }
+    dir.close();
+  }
+  int removed = 0;
+  for (int i = 0; i < nDoomed; ++i) {
+    if (SD_MMC.remove(doomed[i])) {
+      removed += 1;
+    }
+  }
+  clearList();
+  Console::printf("SD wiped %d jpg\n", removed);
+}
+
 bool Storage::saveJpeg(const char *path, const uint8_t *data, size_t length) {
   if (!gReady || path == nullptr || data == nullptr || length == 0) {
     return false;
   }
+  // Critical: truncate/replace. FILE_WRITE alone can leave a longer old file's
+  // tail attached → corrupted JPEG on read (rainbow noise on decode).
+  SD_MMC.remove(path);
   File file = SD_MMC.open(path, FILE_WRITE);
   if (!file) {
     return false;
   }
   const size_t written = file.write(data, length);
+  file.flush();
   file.close();
-  clearList();  // force rescan next browse
-  return written == length;
+  clearList();
+  if (written != length) {
+    Console::printf("SD short write %u/%u %s\n", static_cast<unsigned>(written),
+                    static_cast<unsigned>(length), path);
+    SD_MMC.remove(path);
+    return false;
+  }
+  return true;
 }
 
 int Storage::photoCount() {
@@ -146,18 +198,22 @@ bool Storage::loadJpeg(const char *path, uint8_t **outData, size_t *outLen) {
     return false;
   }
   const size_t len = file.size();
-  if (len == 0 || len > 400000) {
+  if (len < 4 || len > 400000) {
     file.close();
     return false;
   }
-  uint8_t *buf = static_cast<uint8_t *>(malloc(len));
+  uint8_t *buf = static_cast<uint8_t *>(
+      heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (buf == nullptr) {
+    buf = static_cast<uint8_t *>(malloc(len));
+  }
   if (buf == nullptr) {
     file.close();
     return false;
   }
   const size_t got = file.read(buf, len);
   file.close();
-  if (got != len) {
+  if (got != len || buf[0] != 0xFF || buf[1] != 0xD8) {
     free(buf);
     return false;
   }

@@ -30,16 +30,31 @@ class OpenAICompatPromptProvider:
         user = TemplatePromptProvider().synthesize(
             style_id=style_id, style=style, context=context, prompt_cfg=prompt_cfg
         )
+        liberal = bool(style.get("liberal"))
+        strength = (
+            "LIBERAL stylization allowed for this style: push anime/illustration "
+            "look harder (faces, materials, lighting, small atmosphere). "
+            "Still same crop — no new background scene, no readable text."
+            if liberal
+            else "Keep adjustments restrained; style grade + quiet mood accent."
+        )
+        temp = prompt_cfg.get("temperature", 0.45)
+        if liberal:
+            temp = min(0.75, float(temp) + 0.15)
         body = {
             "model": prompt_cfg.get("model", "gpt-4o-mini"),
-            "temperature": prompt_cfg.get("temperature", 0.7),
+            "temperature": temp,
             "messages": [
                 {"role": "system", "content": prompt_cfg.get("system", "")},
                 {
                     "role": "user",
                     "content": (
                         f"Style id: {style_id}\n"
+                        f"Strength: {strength}\n"
                         f"Draft to refine:\n{user}\n\n"
+                        f"Mood watermark: {context.get('mood_watermark', context.get('summary', ''))}\n"
+                        f"Subtle artifact accent: "
+                        f"{', '.join(context.get('artifacts') or [])}\n"
                         f"Full context JSON:\n{json.dumps(context)}"
                     ),
                 },

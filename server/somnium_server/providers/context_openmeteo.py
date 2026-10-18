@@ -222,6 +222,6 @@ class OpenMeteoContextProvider:
             )
         elif "sun" in out and out["sun"].get("sunrise"):
             bits.append(f"sunrise {out['sun']['sunrise']}")
-        bits.append(label)
+        # Never put venue/event names in summary — models paint them as text.
         out["summary"] = ", ".join(str(b) for b in bits if b)
         return out

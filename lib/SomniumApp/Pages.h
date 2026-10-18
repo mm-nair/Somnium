@@ -58,21 +58,27 @@ class ProcessPage : public Somnium::Ui::Page {
   void update(uint32_t dtMs) override;
   void draw(Somnium::Ui::Canvas &canvas) override;
   void setModeLabel(const char *label) { label_ = label; }
-  bool readyToWork() const { return elapsed_ > 900; }
+  void setStatus(const char *status);
+  bool readyToWork() const { return elapsed_ > 400; }
+  bool failed() const { return failed_; }
+  void clearFailed() { failed_ = false; }
 
  private:
   uint32_t elapsed_ = 0;
   const char *label_ = "";
+  char status_[40] = "warming up…";
+  bool failed_ = false;
 };
 
 // Shared full-screen photo view:
-//   Review  — post-shot glance (auto-returns to Modes, no gallery chrome)
+//   Review  — post-shot dream; dial-click returns to Modes (no auto-timeout)
 //   Storage — browse saved plates with dial; footer shows i/len(photos)
 class PreviewPage : public Somnium::Ui::Page {
  public:
   enum class Kind : uint8_t { Review, Storage };
 
   void onEnter() override;
+  void onExit() override;
   void update(uint32_t dtMs) override;
   void draw(Somnium::Ui::Canvas &canvas) override;
   bool handleAction(Somnium::Ui::NavAction action) override;
@@ -88,20 +94,23 @@ class PreviewPage : public Somnium::Ui::Page {
   int storageIndex() const { return index_ - 1; }  // 0-based
   bool backRequested() const { return back_; }
   void clearBack() { back_ = false; }
-  bool autoDone() const { return autoDone_; }
 
  private:
   void drawChrome(Somnium::Ui::Canvas &c);
+  void releaseRgb();
+  bool ensureRgb(int16_t w, int16_t h);
 
   Kind kind_ = Kind::Review;
   const char *modeLabel_ = "";
   int index_ = 1;  // 1-based for display
   int total_ = 0;
   bool back_ = false;
-  bool autoDone_ = false;
   const uint8_t *jpeg_ = nullptr;
   size_t jpegLen_ = 0;
-  uint32_t elapsed_ = 0;
+  uint16_t *rgb_ = nullptr;
+  int16_t rgbW_ = 0;
+  int16_t rgbH_ = 0;
+  bool rgbOk_ = false;
   uint32_t clockMs_ = 0;
 };
 

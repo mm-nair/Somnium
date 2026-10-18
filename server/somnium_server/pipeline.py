@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from somnium_server.mood_artifacts import apply_mood_artifacts
 from somnium_server.providers.registry import build_stack
 
 
@@ -53,6 +54,12 @@ class Pipeline:
             location_cfg=self.cfg.get("location") or {},
             context_cfg=self.cfg.get("context") or {},
         )
+        # Mood watermark → concrete optical artifacts (editable in creative.json).
+        context = apply_mood_artifacts(
+            context,
+            style_id=style_id,
+            creative=self.cfg.get("creative") or {},
+        )
         prompt = self.stack["prompt"].synthesize(
             style_id=style_id,
             style=style,
@@ -62,31 +69,34 @@ class Pipeline:
 
         use_real = force_real or bool(style.get("real"))
         if use_real:
+            image_cfg = dict(self.cfg.get("image") or {})
+            if style.get("liberal"):
+                image_cfg["liberal"] = True
             result_image = self.stack["image"].transform(
                 image=image,
                 prompt=prompt,
-                image_cfg=self.cfg.get("image") or {},
+                image_cfg=image_cfg,
             )
         else:
             result_image = image
             prompt = f"[placeholder/{style_id}] {prompt}"
 
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        if taken_at:
-            try:
-                stamp = (
-                    datetime.fromisoformat(taken_at.replace("Z", "+00:00"))
-                    .astimezone(timezone.utc)
-                    .strftime("%Y%m%dT%H%M%SZ")
-                )
-            except ValueError:
-                pass
-
-        # Dual slideshow entries: …_0_orig then …_1_dream (dial alternates).
+        # Filename uses server wall-clock so rapid shots never clobber each other
+        # (client taken_at is often second-granularity and can collide).
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")[:17]
         stem = f"{stamp}_{style_id}"
         orig_path = self.output_dir / f"{stem}_0_orig.jpg"
         dream_path = self.output_dir / f"{stem}_1_dream.jpg"
         meta_path = self.output_dir / f"{stem}.json"
+        n = 0
+        while orig_path.exists() or dream_path.exists():
+            n += 1
+            stem = f"{stamp}_{style_id}_{n}"
+            orig_path = self.output_dir / f"{stem}_0_orig.jpg"
+            dream_path = self.output_dir / f"{stem}_1_dream.jpg"
+            meta_path = self.output_dir / f"{stem}.json"
+
+        # Dual slideshow on the ThinkPad: …_0_orig then …_1_dream.
         orig_path.write_bytes(image)
         dream_path.write_bytes(result_image)
         meta_path.write_text(

@@ -3,8 +3,11 @@
 #include <Image.h>
 #include <Ui.h>
 #include <Wifi.h>
+#include <esp_heap_caps.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "Brand.h"
 #include "Chrono.h"
@@ -21,7 +24,6 @@ using Somnium::Ui::Text;
 using Somnium::Ui::TextStyle;
 
 constexpr uint32_t kBootMs = 9000;
-constexpr uint32_t kReviewMs = 2200;
 
 Somnium::Ui::Theme &T() { return Somnium::Ui::Ui::theme(); }
 
@@ -195,8 +197,8 @@ void ModePage::drawCarousel(Somnium::Ui::Canvas &c) {
   drawPanel(c, index_ - 1, -1.0f, slide_);
   drawPanel(c, index_ + 1, 1.0f, slide_);
   drawPanel(c, index_, 0.0f, slide_);
-  Text::drawIn(c, "turn dial · click shutter", Rect(0, 220, c.width(), 14),
-               mutedCenter());
+  Text::drawIn(c, "dial turn modes · click storage · shutter shoot",
+               Rect(0, 220, c.width(), 14), mutedCenter());
 }
 
 void ModePage::draw(Somnium::Ui::Canvas &c) {
@@ -212,6 +214,18 @@ void ModePage::draw(Somnium::Ui::Canvas &c) {
 
 void ProcessPage::onEnter() {
   elapsed_ = 0;
+  failed_ = false;
+  strncpy(status_, "warming up…", sizeof(status_) - 1);
+  status_[sizeof(status_) - 1] = '\0';
+  markDirty();
+}
+
+void ProcessPage::setStatus(const char *status) {
+  strncpy(status_, status != nullptr ? status : "", sizeof(status_) - 1);
+  status_[sizeof(status_) - 1] = '\0';
+  if (strstr(status_, "fail") != nullptr || strstr(status_, "no ") != nullptr) {
+    failed_ = true;
+  }
   markDirty();
 }
 
@@ -222,7 +236,7 @@ void ProcessPage::update(uint32_t dtMs) {
 
 void ProcessPage::draw(Somnium::Ui::Canvas &c) {
   c.clear(T().bg);
-  Text::drawIn(c, "cam > plate > sparkle", Rect(0, 40, c.width(), 14),
+  Text::drawIn(c, "cam > wifi > dream", Rect(0, 40, c.width(), 14),
                mutedCenter());
 
   // Same L→R order as Boot: fire · salt · whisk (no progress bar).
@@ -238,11 +252,51 @@ void ProcessPage::draw(Somnium::Ui::Canvas &c) {
   KitchenAnim::drawWhisk(c, 264, static_cast<int16_t>(y + 10), elapsed_,
                          T().text);
 
-  Text::drawIn(c, "Magic is Happening...", Rect(0, 160, c.width(), 20),
-               TextStyle(T().text, 2, Align::Center));
+  Text::drawIn(c, failed_ ? "Kitchen trouble" : "Magic is Happening...",
+               Rect(0, 160, c.width(), 20), TextStyle(T().text, 2, Align::Center));
+  Text::drawIn(c, status_, Rect(0, 188, c.width(), 14), mutedCenter());
   if (label_ != nullptr && label_[0] != '\0') {
-    Text::drawIn(c, label_, Rect(0, 196, c.width(), 14), mutedCenter());
+    Text::drawIn(c, label_, Rect(0, 208, c.width(), 14), mutedCenter());
   }
+  if (failed_) {
+    Text::drawIn(c, "dial-click back", Rect(0, 224, c.width(), 12),
+                 mutedCenter());
+  }
+}
+
+void PreviewPage::releaseRgb() {
+  free(rgb_);
+  rgb_ = nullptr;
+  rgbW_ = 0;
+  rgbH_ = 0;
+  rgbOk_ = false;
+}
+
+bool PreviewPage::ensureRgb(int16_t w, int16_t h) {
+  if (rgbOk_ && rgb_ != nullptr && rgbW_ == w && rgbH_ == h) {
+    return true;
+  }
+  if (jpeg_ == nullptr || jpegLen_ == 0) {
+    return false;
+  }
+  releaseRgb();
+  const size_t bytes =
+      static_cast<size_t>(w) * static_cast<size_t>(h) * sizeof(uint16_t);
+  rgb_ = static_cast<uint16_t *>(
+      heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (rgb_ == nullptr) {
+    rgb_ = static_cast<uint16_t *>(malloc(bytes));
+  }
+  if (rgb_ == nullptr) {
+    return false;
+  }
+  rgbW_ = w;
+  rgbH_ = h;
+  rgbOk_ = Somnium::Image::decodeRgb565(jpeg_, jpegLen_, rgb_, w, h);
+  if (!rgbOk_) {
+    releaseRgb();
+  }
+  return rgbOk_;
 }
 
 void PreviewPage::beginReview(const char *modeLabel, const uint8_t *jpeg,
@@ -251,6 +305,7 @@ void PreviewPage::beginReview(const char *modeLabel, const uint8_t *jpeg,
   modeLabel_ = modeLabel != nullptr ? modeLabel : "";
   index_ = 0;
   total_ = 0;
+  back_ = false;
   setPhoto(jpeg, length);
 }
 
@@ -258,10 +313,11 @@ void PreviewPage::beginStorage(int index0, int total) {
   kind_ = Kind::Storage;
   index_ = total > 0 ? index0 + 1 : 0;
   total_ = total;
-  autoDone_ = false;
+  back_ = false;
 }
 
 void PreviewPage::setPhoto(const uint8_t *jpeg, size_t length) {
+  releaseRgb();
   jpeg_ = jpeg;
   jpegLen_ = length;
   markDirty();
@@ -276,18 +332,14 @@ void PreviewPage::setMeta(const char *modeLabel, int index1Based, int total) {
 
 void PreviewPage::onEnter() {
   back_ = false;
-  autoDone_ = false;
-  elapsed_ = 0;
   clockMs_ = 0;
   markDirty();
 }
 
+void PreviewPage::onExit() { releaseRgb(); }
+
 void PreviewPage::update(uint32_t dtMs) {
-  elapsed_ += dtMs;
   clockMs_ += dtMs;
-  if (kind_ == Kind::Review && elapsed_ >= kReviewMs) {
-    autoDone_ = true;
-  }
   if (clockMs_ >= 1000) {
     clockMs_ = 0;
     markDirty();
@@ -310,17 +362,10 @@ void PreviewPage::nudge(int delta) {
 }
 
 bool PreviewPage::handleAction(Somnium::Ui::NavAction action) {
+  // Navigation is owned by App (shutter = shoot, dial-click = Modes↔Storage).
+  // Only honor Back here; Select is ignored so shutter never means "exit".
   if (action == Somnium::Ui::NavAction::Back) {
     back_ = true;
-    return true;
-  }
-  if (action == Somnium::Ui::NavAction::Select) {
-    // Review: shutter skips remaining glance. Storage: same as back.
-    if (kind_ == Kind::Review) {
-      autoDone_ = true;
-    } else {
-      back_ = true;
-    }
     return true;
   }
   if (kind_ == Kind::Storage) {
@@ -338,11 +383,7 @@ bool PreviewPage::handleAction(Somnium::Ui::NavAction action) {
 
 void PreviewPage::drawChrome(Somnium::Ui::Canvas &c) {
   c.fillRect(Rect(0, 0, c.width(), 22), T().surface);
-  if (kind_ == Kind::Storage) {
-    Text::draw(c, "< Modes", 6, 7, TextStyle(T().text, 1));
-  } else {
-    Text::draw(c, modeLabel_, 6, 7, TextStyle(T().text, 1));
-  }
+  Text::draw(c, "dial-click back", 6, 7, TextStyle(T().text, 1));
 
   c.fillRect(Rect(0, static_cast<int16_t>(c.height() - 28), c.width(), 28),
              T().surface);
@@ -357,8 +398,8 @@ void PreviewPage::drawChrome(Somnium::Ui::Canvas &c) {
     Text::draw(c, meta, 8, static_cast<int16_t>(c.height() - 18),
                TextStyle(T().text, 1));
   } else {
-    Text::draw(c, "saved", 8, static_cast<int16_t>(c.height() - 18),
-               TextStyle(T().textMuted, 1));
+    Text::draw(c, modeLabel_ != nullptr ? modeLabel_ : "dream", 8,
+               static_cast<int16_t>(c.height() - 18), TextStyle(T().text, 1));
   }
 
   char when[32];
@@ -373,7 +414,12 @@ void PreviewPage::drawChrome(Somnium::Ui::Canvas &c) {
 void PreviewPage::draw(Somnium::Ui::Canvas &c) {
   c.clear(T().bg);
   if (jpeg_ != nullptr && jpegLen_ > 0) {
-    Somnium::Image::drawJpeg(jpeg_, jpegLen_, c.gfx());
+    // Decode once into RGB565 — re-decoding every frame locks the UI (dial dies).
+    if (ensureRgb(c.width(), c.height())) {
+      c.blitRgb565(0, 0, rgbW_, rgbH_, rgb_);
+    } else {
+      Somnium::Image::drawJpeg(jpeg_, jpegLen_, c.gfx());
+    }
   } else if (kind_ == Kind::Storage && total_ <= 0) {
     Text::drawIn(c, "no plates yet", Rect(0, 110, c.width(), 20), mutedCenter());
   } else {

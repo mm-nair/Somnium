@@ -25,6 +25,14 @@ struct ProcessResponse {
 
 class ApiClient {
  public:
+  using PumpFn = void (*)();
+
+  // Optional UI/keepalive pump called while waiting on the network.
+  static void setPump(PumpFn fn);
+
+  // GET /health — true if laptop brain is reachable.
+  static bool health(String *err = nullptr);
+
   // POST multipart → image/jpeg body into response.jpeg (PSRAM/heap).
   // Caller frees with freeResponse().
   static bool process(const ProcessRequest &req, ProcessResponse &out);

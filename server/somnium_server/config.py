@@ -76,6 +76,7 @@ def load_config() -> dict[str, Any]:
                 "keywords": m.get("keywords", ""),
                 "prompt": m.get("prompt", ""),
                 "real": bool(m.get("real", False)),
+                "liberal": bool(m.get("liberal", False)),
             }
             for mid, m in modes.items()
         },
@@ -84,14 +85,16 @@ def load_config() -> dict[str, Any]:
             "model": prompt_api.get("model", "grok-3-mini"),
             "base_url": prompt_api.get("base_url", "https://api.x.ai/v1"),
             "api_key_env": prompt_api.get("api_key_env", "XAI_KEY"),
-            "temperature": prompt_api.get("temperature", 0.7),
+            "temperature": prompt_api.get("temperature", 0.45),
             "system": creative.get("prompt_system", ""),
             "user_template": (
-                "Filter style: {style_label} ({style_keywords}).\n"
-                "Grade mood only (do not invent scenery): {context_summary}\n"
-                "Captured: {taken_at} near {location_label}.\n"
-                "Draft filter instruction: {prompt}\n"
-                "Rewrite as a SHORT filter prompt. Preserve the photo; grade only."
+                "Style: {style_label} ({style_keywords}).\n"
+                "Mood (flavor lightly, do not dominate): {context_summary}\n"
+                "Captured: {taken_at}.\n"
+                "Draft: {prompt}\n"
+                "Rewrite as a SHORT edit prompt. Same crop. Style grade first; "
+                "mood artifact as a subtle accent only. No new scene. "
+                "Never add readable text, logos, watermarks, or place/event names."
             ),
         },
         "image": {

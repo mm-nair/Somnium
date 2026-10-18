@@ -5,32 +5,33 @@ Somnium bring-up
 ================
 
 0) nix develop
-
-1) One-time config
+   cp .env.example .env                 # XAI_KEY=...
    cp include/wifi_credentials.example.h include/wifi_credentials.h
    cp include/server_config.example.h include/server_config.h
-   cp .env.example .env          # XAI_KEY=...
-   # creative/creative.json      # modes, theme, logo, models
-   # server/settings.json        # venue + API URLs
-   ./scripts/sync_creative.sh    # after any creative/ edit
 
-2) Server + camera (two terminals)
-   ./scripts/server.sh           # note IP → SOMNIUM_SERVER_HOST, re-flash
-   curl -s http://127.0.0.1:8080/health
-   ./scripts/flash.sh
+1) Wi‑Fi + full AI suite
+   # Phone hotspot (2.4 GHz). Laptop ON the hotspot.
+   ./scripts/server.sh                  # terminal A — note the IP
+   ./scripts/wifi_test.sh               # sanity-check /health
+   # Edit include/server_config.h:
+   #   SOMNIUM_USE_SERVER 1
+   #   SOMNIUM_SERVER_HOST "<laptop hotspot IP>"
+   ./scripts/flash.sh                   # terminal B
+   # Serial should show: WIFI … then after shutter: API … API ok …
+   # Flow: Modes → shutter → Process (mood+xAI) → Review (dream on LCD)
+   #        dial-click → Storage → spin dial → STYLE·raw / STYLE·mod
 
-3) No LCD? Preview UI on the ThinkPad
+2) Controls
+   shutter     = always take a picture (Modes / Storage / Review)
+   dial turn   = carousel (Modes) or browse plates (Storage)
+   dial click  = Modes ↔ Storage  (also dismisses Review)
+
+3) No LCD? / no camera?
    ./scripts/ui_preview.sh
+   ./scripts/cook.sh photo.jpg --style anime --at 2026-10-17T19:30:00Z
 
-4) No camera? Cook a test JPEG
-   ./scripts/cook.sh photo.jpg --style noir --at 2026-10-17T19:30:00Z
-
-5) Offline (no laptop brain)
+4) Offline (no laptop brain)
    #define SOMNIUM_USE_SERVER 0  in server_config.h, re-flash
 
-Hardware USB
-   python tests/monitor_inputs.py
-   python tests/capture_photo.py -o shot.jpg
-
-Extend modes / colors / logo → creative/README.md
+Creative edits → ./scripts/sync_creative.sh then re-flash
 EOF

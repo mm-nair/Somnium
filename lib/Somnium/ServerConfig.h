@@ -7,8 +7,12 @@
 #include <server_config.h>
 #endif
 
+// Always cook on the laptop. Local raw-only "test mode" removed.
 #ifndef SOMNIUM_USE_SERVER
 #define SOMNIUM_USE_SERVER 1
+#endif
+#if !SOMNIUM_USE_SERVER
+#error "SOMNIUM_USE_SERVER must be 1 — offline capture path removed"
 #endif
 
 #ifndef SOMNIUM_SERVER_HOST
@@ -24,7 +28,15 @@
 #endif
 
 #ifndef SOMNIUM_SERVER_TIMEOUT_MS
-#define SOMNIUM_SERVER_TIMEOUT_MS 60000
+#define SOMNIUM_SERVER_TIMEOUT_MS 180000
+#endif
+
+#ifndef SOMNIUM_VENUE_LAT
+#define SOMNIUM_VENUE_LAT 47.6553f
+#endif
+
+#ifndef SOMNIUM_VENUE_LON
+#define SOMNIUM_VENUE_LON -122.3035f
 #endif
 
 namespace Somnium {
@@ -33,5 +45,7 @@ constexpr const char *kHost = SOMNIUM_SERVER_HOST;
 constexpr uint16_t kPort = SOMNIUM_SERVER_PORT;
 constexpr const char *kPath = SOMNIUM_SERVER_PATH;
 constexpr uint32_t kTimeoutMs = SOMNIUM_SERVER_TIMEOUT_MS;
+constexpr float kVenueLat = SOMNIUM_VENUE_LAT;
+constexpr float kVenueLon = SOMNIUM_VENUE_LON;
 }  // namespace ServerConfig
 }  // namespace Somnium

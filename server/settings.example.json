@@ -16,7 +16,7 @@
     "base_url": "https://api.x.ai/v1",
     "model": "grok-3-mini",
     "api_key_env": "XAI_KEY",
-    "temperature": 0.35
+    "temperature": 0.45
   },
   "image_api": {
     "base_url": "https://api.x.ai/v1",
