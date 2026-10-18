@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import random
+import threading
+import urllib.error
+import urllib.request
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,6 +15,9 @@ from typing import Any
 
 from somnium_server.mood_artifacts import apply_mood_artifacts
 from somnium_server.providers.registry import build_stack
+
+logger = logging.getLogger("uvicorn.error")
+_UPLOAD_TIMEOUT_S = 20
 
 
 @dataclass
@@ -128,6 +137,13 @@ class Pipeline:
                 indent=2,
             )
         )
+        # Optional gallery upload. Must not delay or fail the shot.
+        _start_gallery_upload(
+            orig_path=orig_path,
+            dream_path=dream_path,
+            meta_path=meta_path,
+            stem=stem,
+        )
 
         return ProcessResult(
             image=result_image,
@@ -141,3 +157,99 @@ class Pipeline:
                 "dream_path": str(dream_path),
             },
         )
+
+
+def _start_gallery_upload(
+    *,
+    orig_path: Path,
+    dream_path: Path,
+    meta_path: Path,
+    stem: str,
+) -> None:
+    """POST the saved shot when both upload env vars are set.
+
+    Runs on a daemon thread. Missing config is a no-op. Network and HTTP
+    failures are logged and never propagate to the caller.
+    """
+    url = os.environ.get("SOMNIUM_UPLOAD_URL", "").strip()
+    token = os.environ.get("SOMNIUM_UPLOAD_TOKEN", "").strip()
+    if not url or not token:
+        return
+
+    def _run() -> None:
+        try:
+            _post_gallery_upload(
+                url=url,
+                token=token,
+                orig_path=orig_path,
+                dream_path=dream_path,
+                meta_path=meta_path,
+                stem=stem,
+            )
+        except Exception:
+            logger.exception("Gallery upload failed for %s", stem)
+
+    try:
+        threading.Thread(
+            target=_run,
+            name=f"somnium-gallery-upload-{stem}",
+            daemon=True,
+        ).start()
+    except Exception:
+        logger.exception("Gallery upload failed to start for %s", stem)
+
+
+def _post_gallery_upload(
+    *,
+    url: str,
+    token: str,
+    orig_path: Path,
+    dream_path: Path,
+    meta_path: Path,
+    stem: str,
+) -> None:
+    body, content_type = _encode_multipart(
+        [
+            ("orig", orig_path.name, "image/jpeg", orig_path.read_bytes()),
+            ("dream", dream_path.name, "image/jpeg", dream_path.read_bytes()),
+            ("meta", f"{stem}.json", "application/json", meta_path.read_bytes()),
+        ]
+    )
+    request = urllib.request.Request(
+        url,
+        data=body,
+        headers={
+            "Content-Type": content_type,
+            "X-Somnium-Token": token,
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=_UPLOAD_TIMEOUT_S) as response:
+            status = getattr(response, "status", None)
+            response.read()
+    except urllib.error.HTTPError as err:
+        err.close()
+        raise
+    logger.info("Gallery upload succeeded for %s (HTTP %s)", stem, status)
+
+
+def _encode_multipart(parts: list[tuple[str, str, str, bytes]]) -> tuple[bytes, str]:
+    """Build a multipart/form-data body. parts are (name, filename, content_type, data)."""
+    payload = b"".join(data for _, _, _, data in parts)
+    boundary = "----SomniumUpload" + uuid.uuid4().hex
+    while boundary.encode() in payload:
+        boundary = "----SomniumUpload" + uuid.uuid4().hex
+    chunks: list[bytes] = []
+    for name, filename, content_type, data in parts:
+        chunks.append(f"--{boundary}\r\n".encode())
+        chunks.append(
+            (
+                f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'
+                f"Content-Type: {content_type}\r\n\r\n"
+            ).encode()
+        )
+        chunks.append(data)
+        chunks.append(b"\r\n")
+    chunks.append(f"--{boundary}--\r\n".encode())
+    return b"".join(chunks), f"multipart/form-data; boundary={boundary}"

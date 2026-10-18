@@ -120,3 +120,24 @@ Wire format: [PIPELINE.md](https://github.com/mm-nair/Somnium/blob/main/PIPELINE
 ## Built with
 
 ESP32-S3, PlatformIO, FastAPI, xAI Grok, Open-Meteo, Nix. Public gallery: [somnium.photo](https://somnium.photo).
+
+## Gallery upload
+
+On the NixOS image server, shots are saved under `server/outputs/`. Uploading
+them is optional. Source a mode `600` env file that stays out of git (see
+[`server/README.md`](server/README.md)):
+
+```sh
+export SOMNIUM_UPLOAD_URL=https://www.somnium.photo/api/upload
+export SOMNIUM_UPLOAD_TOKEN=your-token-here
+```
+
+`your-token-here` is a placeholder. When both variables are set for the camera
+server, it uploads each saved shot and the directory watcher is optional. To
+watch `server/outputs` instead, from the repository root:
+
+```sh
+nix develop -c python server/scripts/somnium_uploader.py watch server/outputs
+nix run .#uploader
+```
+
