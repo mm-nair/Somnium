@@ -24,10 +24,10 @@ struct TextStyle {
 
 struct Text {
   static constexpr int16_t glyphW(uint8_t size) {
-    return static_cast<int16_t>(6 * size);
+    return static_cast<int16_t>(6 * (size == 0 ? 1 : size));
   }
   static constexpr int16_t glyphH(uint8_t size) {
-    return static_cast<int16_t>(8 * size);
+    return static_cast<int16_t>(8 * (size == 0 ? 1 : size));
   }
 
   static Size measure(const char *text, uint8_t size);
@@ -37,6 +37,8 @@ struct Text {
                    const TextStyle &style);
   static void drawIn(Canvas &canvas, const char *text, Rect box,
                      const TextStyle &style);
+  static void drawFontIn(Canvas &canvas, const char *text, Rect box,
+                         const GFXfont &font, Color color);
   static void drawWrapped(Canvas &canvas, const char *text, Rect box,
                           const TextStyle &style);
 };

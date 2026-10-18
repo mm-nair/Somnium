@@ -28,6 +28,27 @@ def rgb565(rgb: list[int]) -> int:
     return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
 
 
+def validate_firmware_text(modes: list[dict], brand: dict) -> bool:
+    firmware_text_fields = [
+        ("brand.name", brand.get("name", "Somnium")),
+        ("brand.tagline", brand.get("tagline", "")),
+    ]
+    for index, mode in enumerate(modes):
+        for field in ("id", "label"):
+            firmware_text_fields.append((f"modes[{index}].{field}", mode[field]))
+    for field, value in firmware_text_fields:
+        if not isinstance(value, str) or any(
+            not 32 <= ord(character) <= 126 for character in value
+        ):
+            print(
+                f"{field} must use printable ASCII for the firmware; "
+                "replace special characters with plain text (for example, ... or -)",
+                file=sys.stderr,
+            )
+            return False
+    return True
+
+
 def write_modes(modes: list[dict]) -> None:
     lines = [
         "#pragma once",
@@ -36,6 +57,7 @@ def write_modes(modes: list[dict]) -> None:
         "// Source: creative/creative.json",
         "",
         "#include <Arduino.h>",
+        '#include "ModeBitmaps.h"',
         "",
         "namespace Somnium {",
         "namespace App {",
@@ -44,15 +66,17 @@ def write_modes(modes: list[dict]) -> None:
         "  const char *id;",
         "  const char *label;",
         "  uint16_t placeholderColor;",
+        "  const uint16_t *preview;",
         "};",
         "",
         "constexpr Mode kModes[] = {",
     ]
-    for m in modes:
+    for index, m in enumerate(modes):
         tint = m.get("tint") or [80, 80, 90]
         cid = m["id"]
         label = m["label"]
-        lines.append(f'    {{"{cid}", "{label}", 0x{rgb565(tint):04X}}},')
+        preview = f"kModePreview{index}" if m.get("preview") else "nullptr"
+        lines.append(f'    {{"{cid}", "{label}", 0x{rgb565(tint):04X}, {preview}}},')
     lines += [
         "};",
         "constexpr int kModeCount = sizeof(kModes) / sizeof(kModes[0]);",
@@ -71,6 +95,37 @@ def write_modes(modes: list[dict]) -> None:
     ]
     path = APP / "Modes.h"
     path.write_text("\n".join(lines))
+    print("wrote", path.relative_to(ROOT))
+
+
+def write_mode_previews(modes: list[dict]) -> None:
+    from PIL import Image, ImageOps
+
+    width, height = 138, 82
+    lines = [
+        "#pragma once",
+        "#include <Arduino.h>",
+        f"constexpr int16_t kModePreviewWidth = {width};",
+        f"constexpr int16_t kModePreviewHeight = {height};",
+    ]
+    for index, mode in enumerate(modes):
+        if not mode.get("preview"):
+            continue
+        with Image.open(CREATIVE_DIR / mode["preview"]) as image:
+            image = ImageOps.pad(
+                ImageOps.exif_transpose(image).convert("RGB"),
+                (width, height), method=Image.Resampling.LANCZOS, color=(0, 0, 0),
+            )
+            pixels = [
+                f"0x{rgb565(image.getpixel((x, y))):04X}"
+                for y in range(height) for x in range(width)
+            ]
+        lines.append(f"const uint16_t kModePreview{index}[{width * height}] PROGMEM = {{")
+        for offset in range(0, len(pixels), 12):
+            lines.append(",".join(pixels[offset:offset + 12]) + ",")
+        lines.append("};")
+    path = APP / "ModeBitmaps.h"
+    path.write_text("\n".join(lines) + "\n")
     print("wrote", path.relative_to(ROOT))
 
 
@@ -176,8 +231,12 @@ def main() -> int:
     if not modes:
         print("creative.json has no modes", file=sys.stderr)
         return 1
+    brand = data.get("brand") or {}
+    if not validate_firmware_text(modes, brand):
+        return 1
+    write_mode_previews(modes)
     write_modes(modes)
-    write_theme(data.get("theme") or {}, data.get("ui") or {}, data.get("brand") or {})
+    write_theme(data.get("theme") or {}, data.get("ui") or {}, brand)
     write_logo(data.get("ui") or {})
     print("sync ok — rebuild firmware after theme/mode/logo changes")
     return 0

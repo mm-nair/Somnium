@@ -13,19 +13,20 @@ from somnium_server.config import env_secret
 
 # Default: grade + subtle optical mood; no scene rewrite.
 _FILTER_GUARD = (
-    "Restyle this photo in-place. Keep the same crop and main subjects. "
-    "Apply the style grade plus subtle optical mood (soft glare, light grain, "
-    "vignette, tint, haze) — keep artifacts quiet, not the focus. "
-    "Do not expand the frame or invent a new background scene. "
+    "Keep the source rendering and apply the requested color, light, and focus changes. "
+    "Keep the same crop and recognizable subjects/layout. "
+    "Apply the lighting finish only to existing surfaces, retaining the original light direction. "
+    "Preserve the existing setting, including any sky or ceiling, and add no scenery or decorative elements. "
     "Do not add any readable text, logos, captions, or watermarks. "
 )
 
 # Liberal styles (e.g. anime): stronger stylization, still same crop.
 _LIBERAL_GUARD = (
-    "Restyle this photo as a bold illustration in-place. Keep the same crop "
-    "and recognizable subjects/layout. You may freely stylize faces, materials, "
-    "lighting, and small atmospheric details. Do not expand the frame or replace "
-    "the background with a wholly new scene. No readable text, logos, or captions. "
+    "Fully realize the requested medium, including photographic treatments. Keep the same crop "
+    "and recognizable subjects/layout. Stylize the rendering of existing faces and materials. "
+    "Preserve the existing setting, including any sky or ceiling, and add no scenery or decorative elements. "
+    "Apply the lighting finish only to existing surfaces, retaining the original light direction. "
+    "No readable text, logos, captions, or watermarks. "
 )
 
 
@@ -73,7 +74,7 @@ class XaiImageProvider:
         )
         b64 = base64.b64encode(image).decode()
         guard = _LIBERAL_GUARD if image_cfg.get("liberal") else _FILTER_GUARD
-        full_prompt = guard + prompt.strip()
+        full_prompt = prompt.strip() + "\n\n" + guard
 
         body: dict[str, Any] = {
             "model": model,

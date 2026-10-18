@@ -4,6 +4,7 @@
 // Source: creative/creative.json
 
 #include <Arduino.h>
+#include "ModeBitmaps.h"
 
 namespace Somnium {
 namespace App {
@@ -12,13 +13,15 @@ struct Mode {
   const char *id;
   const char *label;
   uint16_t placeholderColor;
+  const uint16_t *preview;
 };
 
 constexpr Mode kModes[] = {
-    {"popcomic", "POP COMIC", 0xDA96},
-    {"watercolor", "WASH", 0xFD07},
-    {"anime", "ANIME", 0xFBD9},
-    {"surprise", "SURPRISE ME", 0x7EF6},
+    {"popcomic", "COMIC", 0xDA96, kModePreview0},
+    {"watercolor", "WATERCOLOR", 0xFD07, kModePreview1},
+    {"anime", "ANIME", 0xFBD9, kModePreview2},
+    {"surprise", "SURPRISE", 0x7EF6, nullptr},
+    {"pencil", "PENCIL SKETCH", 0xD54C, kModePreview4},
 };
 constexpr int kModeCount = sizeof(kModes) / sizeof(kModes[0]);
 

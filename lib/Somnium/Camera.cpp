@@ -7,6 +7,41 @@
 #include "Console.h"
 
 namespace Somnium {
+namespace {
+
+bool orientLandscapeFrame(const camera_fb_t &frame, camera_fb_t &landscapeFrame,
+                          bool mirrorHorizontal =
+                              Defaults::kCameraMirrorHorizontal) {
+  landscapeFrame = frame;
+  landscapeFrame.buf = static_cast<uint8_t *>(ps_malloc(frame.len));
+  if (landscapeFrame.buf == nullptr) {
+    landscapeFrame.buf = static_cast<uint8_t *>(malloc(frame.len));
+  }
+  if (landscapeFrame.buf == nullptr) {
+    return false;
+  }
+
+  const size_t cropWidth = frame.height * frame.height / frame.width;
+  const size_t cropLeft = (frame.width - cropWidth) / 2;
+  for (size_t y = 0; y < frame.height; ++y) {
+    const size_t sourceX = cropLeft + cropWidth - 1 -
+                           (2 * y + 1) * cropWidth / (2 * frame.height);
+    for (size_t x = 0; x < frame.width; ++x) {
+      const size_t sourceY = (2 * x + 1) * frame.height / (2 * frame.width);
+      const size_t sourceOffset = (sourceY * frame.width + sourceX) * 2;
+      const size_t outputX = mirrorHorizontal ? frame.width - 1 - x : x;
+      const size_t outputOffset = (y * frame.width + outputX) * 2;
+      landscapeFrame.buf[outputOffset] = frame.buf[sourceOffset];
+      landscapeFrame.buf[outputOffset + 1] = frame.buf[sourceOffset + 1];
+    }
+    if ((y & 15) == 0) {
+      yield();
+    }
+  }
+  return true;
+}
+
+}
 
 SemaphoreHandle_t Camera::sMutex = nullptr;
 int Camera::sActiveWidth = 0;
@@ -69,6 +104,21 @@ bool Camera::begin(int width) {
   return true;
 }
 
+void Camera::end() {
+  if (sMutex == nullptr) {
+    return;
+  }
+  if (xSemaphoreTake(sMutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
+    return;
+  }
+  if (sActiveWidth != 0) {
+    esp_camera_deinit();
+    sActiveWidth = 0;
+    Console::println("CAM off");
+  }
+  xSemaphoreGive(sMutex);
+}
+
 bool Camera::ready() { return sActiveWidth != 0; }
 
 int Camera::activeWidth() { return sActiveWidth; }
@@ -107,7 +157,9 @@ bool Camera::captureJpeg(JpegBuffer &out, int width, int jpegQuality) {
     xSemaphoreGive(sMutex);
     return false;
   }
-  if (frame->width != static_cast<size_t>(width) ||
+  if (frame->buf == nullptr || frame->format != PIXFORMAT_RGB565 ||
+      frame->width != static_cast<size_t>(width) ||
+      frame->height != static_cast<size_t>(width * 3 / 4) ||
       frame->len != frame->width * frame->height * 2) {
     esp_camera_fb_return(frame);
     xSemaphoreGive(sMutex);
@@ -115,13 +167,23 @@ bool Camera::captureJpeg(JpegBuffer &out, int width, int jpegQuality) {
   }
 
   const unsigned long encodeStarted = millis();
-  const bool encoded = frame2jpg(frame, jpegQuality, &out.data, &out.length);
-  out.encodeMs = millis() - encodeStarted;
-  if (encoded && sFrameCallback != nullptr) {
-    sFrameCallback(frame);
+  camera_fb_t landscapeFrame{};
+  if (!orientLandscapeFrame(*frame, landscapeFrame)) {
+    esp_camera_fb_return(frame);
+    xSemaphoreGive(sMutex);
+    return false;
   }
-  out.width = static_cast<int>(frame->width);
-  out.height = static_cast<int>(frame->height);
+
+  if (sFrameCallback != nullptr) {
+    sFrameCallback(&landscapeFrame);
+  }
+
+  const bool encoded =
+      frame2jpg(&landscapeFrame, jpegQuality, &out.data, &out.length);
+  out.encodeMs = millis() - encodeStarted;
+  out.width = static_cast<int>(landscapeFrame.width);
+  out.height = static_cast<int>(landscapeFrame.height);
+  free(landscapeFrame.buf);
   esp_camera_fb_return(frame);
   xSemaphoreGive(sMutex);
 

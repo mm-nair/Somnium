@@ -1,6 +1,8 @@
 #include "Host.h"
 
 #include <Arduino.h>
+#include <esp_rom_crc.h>
+#include <esp_system.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,12 +21,26 @@ namespace {
 bool gCooking = false;
 Host::PumpFn gPump = nullptr;
 
+char gPollLine[96];
+size_t gPollLen = 0;
+
 void pump() {
   if (gPump != nullptr) {
     gPump();
   } else {
     yield();
   }
+}
+
+void drainRx() {
+  while (Serial.available() > 0) {
+    Serial.read();
+  }
+}
+
+void resetPollAssembler() {
+  gPollLen = 0;
+  gPollLine[0] = '\0';
 }
 
 void applyTime(unsigned long epoch) {
@@ -37,7 +53,6 @@ void applyTime(unsigned long epoch) {
   tv.tv_sec = static_cast<time_t>(epoch);
   tv.tv_usec = 0;
   settimeofday(&tv, nullptr);
-  // Stay quiet on the wire during COOK↔DREAM — TX log lines can race RX.
   if (!gCooking) {
     Console::printf("TIME synced %lu\n", epoch);
   }
@@ -50,6 +65,27 @@ void sendPhoto(JpegBuffer &photo) {
   Serial.write(photo.data, photo.length);
   Serial.print("\nPHOTO_END\n");
   Serial.flush();
+}
+
+bool isKnownCommand(const char *line) {
+  if (line == nullptr || line[0] == '\0') {
+    return false;
+  }
+  unsigned long epoch = 0;
+  if (sscanf(line, "TIME %lu", &epoch) == 1) {
+    return true;
+  }
+  if (strcmp(line, "hello") == 0 || strcmp(line, "capture") == 0 ||
+      strcmp(line, "cooktest") == 0 || strcmp(line, "sdlist") == 0 ||
+      strcmp(line, "sdpull") == 0 || strcmp(line, "sdwipe") == 0) {
+    return true;
+  }
+  int width = 0;
+  int quality = 0;
+  if (sscanf(line, "capture %d %d", &width, &quality) == 2) {
+    return true;
+  }
+  return false;
 }
 
 void handleLine(char *line) {
@@ -69,10 +105,6 @@ void handleLine(char *line) {
   int quality = Defaults::kJpegQuality;
   if (strcmp(line, "capture") == 0 ||
       sscanf(line, "capture %d %d", &width, &quality) == 2) {
-    if (!Camera::ready()) {
-      Console::println("ERR camera");
-      return;
-    }
     JpegBuffer photo;
     if (!Image::takePhoto(photo, width, quality)) {
       Console::println("ERR capture");
@@ -84,10 +116,6 @@ void handleLine(char *line) {
   }
 
   if (strcmp(line, "cooktest") == 0) {
-    if (!Camera::ready()) {
-      Console::println("ERR camera");
-      return;
-    }
     JpegBuffer photo;
     if (!Image::takePhoto(photo)) {
       Console::println("ERR capture");
@@ -171,48 +199,123 @@ void handleLine(char *line) {
     return;
   }
 
-  Console::println("ERR cmd");
 }
 
 bool readExact(uint8_t *dst, size_t len, uint32_t timeoutMs) {
-  // No UI pump here — Process SPI blits starve UART RX and drop DREAM bytes.
   size_t got = 0;
-  const unsigned long deadline = millis() + timeoutMs;
-  while (got < len && millis() < deadline) {
+  const unsigned long started = millis();
+  while (got < len && millis() - started < timeoutMs) {
     if (Serial.available() <= 0) {
       yield();
       delay(1);
       continue;
     }
-    got += Serial.readBytes(dst + got, len - got);
+    const size_t available = static_cast<size_t>(Serial.available());
+    const size_t remaining = len - got;
+    got += Serial.readBytes(dst + got,
+                            available < remaining ? available : remaining);
   }
   return got == len;
 }
 
-bool readLine(char *buf, size_t buflen, uint32_t timeoutMs, bool allowPump) {
+bool waitDreamHeader(unsigned requestId, unsigned &dreamLen,
+                     unsigned &dreamCrc, String *err) {
+  char line[96];
   size_t n = 0;
-  const unsigned long deadline = millis() + timeoutMs;
-  while (millis() < deadline && n + 1 < buflen) {
-    if (allowPump) {
-      pump();
-    } else {
-      yield();
-    }
+  bool overflow = false;
+  const unsigned long started = millis();
+  unsigned long lastPump = started;
+
+  while (millis() - started < Defaults::kCookTimeoutMs) {
     if (Serial.available() <= 0) {
+      const unsigned long now = millis();
+      if (now - lastPump >= 100) {
+        lastPump = now;
+        pump();
+      } else {
+        yield();
+      }
       delay(1);
       continue;
     }
+
     const char c = static_cast<char>(Serial.read());
     if (c == '\r') {
       continue;
     }
-    if (c == '\n') {
-      buf[n] = '\0';
+    if (c != '\n') {
+      if (n + 1 < sizeof(line)) {
+        line[n++] = c;
+      } else {
+        overflow = true;
+      }
+      continue;
+    }
+
+    line[n] = '\0';
+    n = 0;
+    if (overflow) {
+      overflow = false;
+      continue;
+    }
+    if (line[0] == '\0') {
+      continue;
+    }
+
+    unsigned long epoch = 0;
+    if (sscanf(line, "TIME %lu", &epoch) == 1) {
+      applyTime(epoch);
+      continue;
+    }
+    if (strncmp(line, "ERR ", 4) == 0) {
+      unsigned responseId = 0;
+      int messageOffset = 0;
+      if (sscanf(line, "ERR %8x%n", &responseId, &messageOffset) == 1 &&
+          messageOffset == 12 && line[messageOffset] == ' ') {
+        if (responseId != requestId) {
+          continue;
+        }
+        ++messageOffset;
+      } else {
+        messageOffset = 4;
+      }
+      if (err != nullptr) {
+        *err = line + messageOffset;
+      }
+      return false;
+    }
+    unsigned len = 0;
+    unsigned responseId = 0;
+    unsigned crc = 0;
+    char extra = '\0';
+    if (sscanf(line, "DREAM %8x %u %8x %c", &responseId, &len, &crc,
+               &extra) == 3) {
+      if (responseId != requestId) {
+        Serial.printf("ERR %08x stale cook\n", responseId);
+        continue;
+      }
+      if (len < 4 || len > 400000) {
+        if (err != nullptr) {
+          *err = "dream length";
+        }
+        return false;
+      }
+      dreamLen = len;
+      dreamCrc = crc;
       return true;
     }
-    buf[n++] = c;
+    if (strncmp(line, "DREAM ", 6) == 0) {
+      if (err != nullptr) {
+        *err = "bridge protocol mismatch";
+      }
+      return false;
+    }
+    Console::printf("HOST skip hdr: %.40s\n", line);
   }
-  buf[n] = '\0';
+
+  if (err != nullptr) {
+    *err = "bridge timeout";
+  }
   return false;
 }
 
@@ -224,23 +327,21 @@ void Host::poll() {
   if (gCooking) {
     return;
   }
-  static char line[96];
-  static size_t length = 0;
   while (Serial.available() > 0) {
     const char c = static_cast<char>(Serial.read());
     if (c == '\r') {
       continue;
     }
     if (c != '\n') {
-      if (length < sizeof(line) - 1) {
-        line[length++] = c;
+      if (gPollLen < sizeof(gPollLine) - 1) {
+        gPollLine[gPollLen++] = c;
       }
       continue;
     }
-    line[length] = '\0';
-    length = 0;
-    if (line[0] != '\0') {
-      handleLine(line);
+    gPollLine[gPollLen] = '\0';
+    gPollLen = 0;
+    if (gPollLine[0] != '\0' && isKnownCommand(gPollLine)) {
+      handleLine(gPollLine);
     }
   }
 }
@@ -257,12 +358,14 @@ bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
   }
 
   gCooking = true;
-  while (Serial.available() > 0) {
-    Serial.read();
-  }
+  resetPollAssembler();
+  drainRx();
 
-  Serial.printf("COOK style=%s len=%u", styleId != nullptr ? styleId : "cartoon",
-                static_cast<unsigned>(jpegLen));
+  const unsigned requestId = esp_random();
+  const unsigned jpegCrc = esp_rom_crc32_le(0, jpeg, jpegLen);
+  Serial.printf("COOK style=%s len=%u id=%08x crc=%08x",
+                styleId != nullptr ? styleId : "cartoon",
+                static_cast<unsigned>(jpegLen), requestId, jpegCrc);
   if (takenAt != nullptr && takenAt[0] != '\0') {
     Serial.printf(" taken_at=%s", takenAt);
   }
@@ -274,82 +377,62 @@ bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
   Serial.print("\nCOOK_END\n");
   Serial.flush();
 
-  char line[96];
-  const unsigned long deadline = millis() + 180000;
-  while (true) {
-    if (millis() >= deadline) {
-      gCooking = false;
-      if (err != nullptr) {
-        *err = "bridge timeout";
-      }
-      return false;
-    }
-    // Pump UI while waiting on xAI; stop once payload starts arriving.
-    if (!readLine(line, sizeof(line), 5000, /*allowPump=*/true)) {
-      continue;
-    }
-    unsigned long epoch = 0;
-    if (sscanf(line, "TIME %lu", &epoch) == 1) {
-      applyTime(epoch);
-      continue;
-    }
-    break;
-  }
-
-  if (strncmp(line, "ERR ", 4) == 0) {
-    gCooking = false;
+  uint8_t *buf = nullptr;
+  auto fail = [&](const char *message) {
+    free(buf);
     if (err != nullptr) {
-      *err = line + 4;
+      *err = message;
     }
+    Serial.printf("ERR %08x %s\n", requestId, message);
+    Serial.flush();
+    drainRx();
+    resetPollAssembler();
+    gCooking = false;
     return false;
-  }
+  };
 
   unsigned dreamLen = 0;
-  if (sscanf(line, "DREAM %u", &dreamLen) != 1 || dreamLen < 4 ||
-      dreamLen > 400000) {
-    gCooking = false;
-    if (err != nullptr) {
-      *err = "bad dream hdr";
-    }
-    Console::printf("HOST bad dream hdr: %s\n", line);
-    return false;
+  unsigned dreamCrc = 0;
+  String headerErr;
+  if (!waitDreamHeader(requestId, dreamLen, dreamCrc, &headerErr)) {
+    return fail(headerErr.c_str());
   }
 
-  uint8_t *buf = static_cast<uint8_t *>(ps_malloc(dreamLen));
+  buf = static_cast<uint8_t *>(ps_malloc(dreamLen));
   if (buf == nullptr) {
     buf = static_cast<uint8_t *>(malloc(dreamLen));
   }
   if (buf == nullptr) {
-    gCooking = false;
-    if (err != nullptr) {
-      *err = "oom dream";
-    }
-    return false;
+    return fail("oom dream");
   }
-  if (!readExact(buf, dreamLen, 60000)) {
-    free(buf);
-    gCooking = false;
-    if (err != nullptr) {
-      *err = "dream short";
-    }
-    return false;
-  }
-  char end[16];
-  readLine(end, sizeof(end), 5000, /*allowPump=*/false);
 
-  if (buf[0] != 0xFF || buf[1] != 0xD8) {
-    free(buf);
-    gCooking = false;
-    if (err != nullptr) {
-      *err = "bad jpeg";
-    }
-    return false;
+  Serial.printf("READY DREAM %08x\n", requestId);
+  Serial.flush();
+  if (!readExact(buf, dreamLen, 60000)) {
+    return fail("dream short");
+  }
+
+  const char expectedTrailer[] = "\nDREAM_END\n";
+  uint8_t trailer[sizeof(expectedTrailer) - 1];
+  if (!readExact(trailer, sizeof(trailer), 5000) ||
+      memcmp(trailer, expectedTrailer, sizeof(trailer)) != 0) {
+    return fail("dream trailer");
+  }
+  if (esp_rom_crc32_le(0, buf, dreamLen) != dreamCrc) {
+    return fail("dream crc mismatch");
+  }
+  if (!Image::looksLikeJpeg(buf, dreamLen)) {
+    return fail("bad jpeg");
   }
 
   outDream.data = buf;
   outDream.length = dreamLen;
+  outDream.crc32 = dreamCrc;
+  resetPollAssembler();
   gCooking = false;
-  Console::printf("HOST DREAM %u B\n", dreamLen);
+  Serial.printf("ACK DREAM %08x\n", requestId);
+  Serial.flush();
+  Console::printf("HOST DREAM %u B crc=%08x\n", dreamLen, dreamCrc);
   return true;
 }
 

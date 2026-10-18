@@ -44,8 +44,11 @@ constexpr uint32_t kDisplaySpiHz = 10000000;
 constexpr int kDisplayWidth = 320;
 constexpr int kDisplayHeight = 240;
 constexpr int kCameraWidth = 320;
+constexpr bool kCameraMirrorHorizontal = true;
 constexpr int kJpegQuality = 70;
 constexpr unsigned long kButtonDebounceMs = 25;
+// Must exceed usb_bridge/xAI --timeout (240s) plus USB reconnect slack.
+constexpr uint32_t kCookTimeoutMs = 300000;
 
 // Venue for Open-Meteo mood (sent with each USB cook).
 constexpr float kVenueLat = 47.6553f;

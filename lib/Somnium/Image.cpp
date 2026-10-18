@@ -1,5 +1,8 @@
 #include "Image.h"
 
+#include <esp_heap_caps.h>
+#include <stdlib.h>
+#include <string.h>
 #include <TJpg_Decoder.h>
 
 #include "Display.h"
@@ -20,13 +23,6 @@ bool jpegDrawToken(int16_t x, int16_t y, uint16_t w, uint16_t h,
   }
   gfx->drawRGBBitmap(x, y, bitmap, w, h);
   return true;
-}
-
-bool targetIsTft(Adafruit_GFX *target) {
-  if (target == nullptr) {
-    return true;
-  }
-  return Display::ready() && target == static_cast<Adafruit_GFX *>(Display::tft());
 }
 
 }  // namespace
@@ -60,9 +56,7 @@ bool Image::drawJpeg(const uint8_t *data, size_t length, Adafruit_GFX *target) {
   }
   gJpegTarget = target;
   TJpgDec.setJpgScale(1);
-  // ILI9341 SPI wants swapped RGB565; RAM framebuffer (PixelCanvas) wants
-  // native uint16_t order. Swapping into the FB → rainbow / noise on blit.
-  TJpgDec.setSwapBytes(targetIsTft(target));
+  TJpgDec.setSwapBytes(false);
   TJpgDec.setCallback(jpegDrawToken);
   const bool ok = TJpgDec.drawJpg(0, 0, data, length) == JDR_OK;
   gJpegTarget = nullptr;
@@ -75,6 +69,25 @@ bool Image::decodeRgb565(const uint8_t *data, size_t length, uint16_t *out,
       !looksLikeJpeg(data, length)) {
     return false;
   }
+
+  uint16_t jpgW = 0;
+  uint16_t jpgH = 0;
+  if (TJpgDec.getJpgSize(&jpgW, &jpgH, data, length) != JDR_OK ||
+      jpgW == 0 || jpgH == 0 || jpgW > INT16_MAX || jpgH > INT16_MAX) {
+    return false;
+  }
+
+  const size_t nativeBytes =
+      static_cast<size_t>(jpgW) * static_cast<size_t>(jpgH) * 2;
+  auto *native = static_cast<uint8_t *>(
+      heap_caps_malloc(nativeBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (native == nullptr) {
+    native = static_cast<uint8_t *>(malloc(nativeBytes));
+  }
+  if (native == nullptr) {
+    return false;
+  }
+
   class BufGfx : public Adafruit_GFX {
    public:
     BufGfx(int16_t w, int16_t h, uint16_t *px)
@@ -85,20 +98,55 @@ bool Image::decodeRgb565(const uint8_t *data, size_t length, uint16_t *out,
       }
       px_[static_cast<int32_t>(y) * w_ + x] = color;
     }
-    void fillScreen(uint16_t color) override {
-      const size_t n = static_cast<size_t>(w_) * static_cast<size_t>(h_);
-      for (size_t i = 0; i < n; ++i) {
-        px_[i] = color;
-      }
-    }
 
    private:
     uint16_t *px_;
     int16_t w_;
     int16_t h_;
-  } gfx(outW, outH, out);
-  gfx.fillScreen(0);
-  return drawJpeg(data, length, &gfx);
+  };
+  BufGfx gfx(static_cast<int16_t>(jpgW), static_cast<int16_t>(jpgH),
+             reinterpret_cast<uint16_t *>(native));
+  const bool decoded = drawJpeg(data, length, &gfx);
+  if (!decoded) {
+    free(native);
+    return false;
+  }
+
+  auto *src = reinterpret_cast<const uint16_t *>(native);
+  if (jpgW == static_cast<uint16_t>(outW) &&
+      jpgH == static_cast<uint16_t>(outH)) {
+    memcpy(out, src, nativeBytes);
+    free(native);
+    return true;
+  }
+
+  // Letterbox (portrait 240x320 → landscape 320x240 LCD).
+  const float scaleX = static_cast<float>(outW) / static_cast<float>(jpgW);
+  const float scaleY = static_cast<float>(outH) / static_cast<float>(jpgH);
+  const float s = scaleX < scaleY ? scaleX : scaleY;
+  const int16_t dw = static_cast<int16_t>(jpgW * s + 0.5f);
+  const int16_t dh = static_cast<int16_t>(jpgH * s + 0.5f);
+  const int16_t ox = static_cast<int16_t>((outW - dw) / 2);
+  const int16_t oy = static_cast<int16_t>((outH - dh) / 2);
+  const size_t outN = static_cast<size_t>(outW) * static_cast<size_t>(outH);
+  for (size_t i = 0; i < outN; ++i) {
+    out[i] = 0;
+  }
+  for (int16_t y = 0; y < dh; ++y) {
+    const int16_t sy =
+        static_cast<int16_t>((static_cast<int32_t>(y) * jpgH) / dh);
+    for (int16_t x = 0; x < dw; ++x) {
+      const int16_t sx =
+          static_cast<int16_t>((static_cast<int32_t>(x) * jpgW) / dw);
+      out[static_cast<int32_t>(oy + y) * outW + (ox + x)] =
+          src[static_cast<int32_t>(sy) * jpgW + sx];
+    }
+    if ((y & 15) == 0) {
+      yield();
+    }
+  }
+  free(native);
+  return true;
 }
 
 }  // namespace Somnium

@@ -47,13 +47,6 @@ def _match_tags(ctx: dict[str, Any]) -> list[str]:
             tags.append("cold")
         elif temp >= 22:
             tags.append("warm")
-    moon = ((ctx.get("astro") or {}).get("moon_phase") or "").lower()
-    if "full" in moon:
-        tags.append("full_moon")
-    elif "new" in moon:
-        tags.append("new_moon")
-    elif moon:
-        tags.append("moonlit")
     wind = (ctx.get("weather") or {}).get("wind_ms")
     if isinstance(wind, (int, float)) and wind >= 6:
         tags.append("windy")
@@ -73,16 +66,16 @@ def apply_mood_artifacts(
     pick_n = int(cfg.get("pick", 2))
 
     tags = _match_tags(context)
-    candidates: list[str] = list(always)
-    for tag in tags:
-        candidates.extend(pools.get(tag, []))
-    # Dedup preserving order
-    seen: set[str] = set()
-    uniq: list[str] = []
-    for item in candidates:
-        if item not in seen:
-            seen.add(item)
-            uniq.append(item)
+    groups = (
+        ("thunder", "snow", "rain", "drizzle", "fog", "overcast", "heavy_cloud", "cloud", "clear", "clearish"),
+        ("night", "day"),
+        ("cold", "warm"),
+        ("windy",),
+    )
+    selected_tags = [
+        next((tag for tag in group if tag in tags and pools.get(tag)), "")
+        for group in groups
+    ]
 
     seed = "|".join(
         [
@@ -94,21 +87,17 @@ def apply_mood_artifacts(
         ]
     )
     rng = _rng(seed)
-    if not uniq:
-        uniq = [
-            "subtle film grain",
-            "soft vignette at the corners",
-        ]
-    n = max(1, min(pick_n, len(uniq)))
-    chosen = rng.sample(uniq, n)
+    chosen = list(dict.fromkeys(always))
+    for tag in selected_tags:
+        if len(chosen) >= max(len(always), pick_n):
+            break
+        candidates = [item for item in pools.get(tag, []) if item not in chosen]
+        if candidates:
+            chosen.append(rng.choice(candidates))
 
     context = dict(context)
     context["mood_tags"] = tags
     context["artifacts"] = chosen
-    context["mood_watermark"] = (
-        f"{context.get('summary', '')} · accent: {', '.join(chosen)}"
-    )
-    # Append accent softly so templates still see weather + one quirk.
-    if context.get("summary"):
-        context["summary"] = f"{context['summary']}; accent: {', '.join(chosen)}"
+    context["mood_watermark"] = "; ".join(chosen)
+    context["summary"] = context["mood_watermark"]
     return context

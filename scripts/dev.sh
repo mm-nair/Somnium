@@ -8,18 +8,18 @@ Somnium bring-up (USB cook)
    cp .env.example .env                 # XAI_KEY=...
 
 1) ThinkPad brain + USB bridge
-   ./scripts/server.sh                  # terminal A
-   ./scripts/usb_bridge.sh              # terminal B (holds /dev/ttyACM*)
-   ./scripts/flash.sh                   # terminal C — stop bridge first, then restart it
+   ./scripts/server.sh                  # terminal A — always while demoing
+   ./scripts/usb_bridge.sh              # terminal B — ONLY while shooting
+
+   Stop bridge before anything else that needs the port:
+     pkill -f usb_bridge.py
+     ./scripts/flash.sh                 # then restart bridge
+     ./scripts/usb_pull_sd.sh           # → demos/sd_<timestamp>/
 
 2) Shoot
    Modes → shutter → Process ("usb → thinkpad…") → Review · dream (~20s+)
    dial-click → Storage → spin dial → STYLE·raw / STYLE·mod
-
-2b) Save SD demos to ThinkPad (stop bridge first)
-   pkill -f usb_bridge.py
-   ./scripts/usb_pull_sd.sh            # → demos/sd_<timestamp>/
-   ./scripts/usb_bridge.sh
+   Bridge log should show: COOK … / DREAM … accepted by ESP / | HOST DREAM … / | UI review
 
 3) Controls
    shutter     = always take a picture

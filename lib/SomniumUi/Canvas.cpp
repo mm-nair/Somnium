@@ -1,6 +1,7 @@
 #include "Canvas.h"
 
 #include <esp_heap_caps.h>
+#include <string.h>
 
 namespace Somnium {
 namespace Ui {
@@ -37,6 +38,13 @@ class PixelCanvas : public Adafruit_GFX {
 }  // namespace
 
 void Canvas::bind(Adafruit_SPITFT *tft, int16_t width, int16_t height) {
+  delete static_cast<PixelCanvas *>(fb_);
+  free(fbPixels_);
+  free(presentedPixels_);
+  fb_ = nullptr;
+  fbPixels_ = nullptr;
+  presentedPixels_ = nullptr;
+  presentedFrameValid_ = false;
   tft_ = tft;
   width_ = width;
   height_ = height;
@@ -49,6 +57,8 @@ void Canvas::bind(Adafruit_SPITFT *tft, int16_t width, int16_t height) {
   }
   if (fbPixels_ != nullptr) {
     fb_ = new PixelCanvas(width, height, fbPixels_);
+    presentedPixels_ = static_cast<uint16_t *>(
+        heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     gfx_ = fb_;
   } else {
     fb_ = nullptr;
@@ -72,7 +82,71 @@ void Canvas::endFrame() {
   }
   frameOpen_ = false;
   if (fbPixels_ != nullptr && tft_ != nullptr) {
-    tft_->drawRGBBitmap(0, 0, fbPixels_, width_, height_);
+    if (presentedPixels_ == nullptr || !presentedFrameValid_) {
+      tft_->drawRGBBitmap(0, 0, fbPixels_, width_, height_);
+      if (presentedPixels_ != nullptr) {
+        memcpy(presentedPixels_, fbPixels_,
+               static_cast<size_t>(width_) * height_ * sizeof(uint16_t));
+        presentedFrameValid_ = true;
+      }
+    } else {
+      Rect pending;
+      bool transferStarted = false;
+      auto flushPending = [&]() {
+        if (pending.empty()) {
+          return;
+        }
+        if (!transferStarted) {
+          tft_->startWrite();
+          transferStarted = true;
+        }
+        tft_->setAddrWindow(pending.x, pending.y, pending.w, pending.h);
+        for (int16_t row = pending.y; row < pending.bottom(); ++row) {
+          const size_t offset = static_cast<size_t>(row) * width_ + pending.x;
+          tft_->writePixels(fbPixels_ + offset, pending.w);
+          memcpy(presentedPixels_ + offset, fbPixels_ + offset,
+                 static_cast<size_t>(pending.w) * sizeof(uint16_t));
+        }
+        pending = Rect();
+      };
+      for (int16_t row = 0; row < height_; ++row) {
+        const size_t offset = static_cast<size_t>(row) * width_;
+        int16_t column = 0;
+        while (column < width_) {
+          while (column < width_ && fbPixels_[offset + column] ==
+                                       presentedPixels_[offset + column]) {
+            ++column;
+          }
+          if (column == width_) {
+            break;
+          }
+          const int16_t left = column;
+          int16_t right = column;
+          int16_t unchangedPixels = 0;
+          for (; column < width_; ++column) {
+            if (fbPixels_[offset + column] != presentedPixels_[offset + column]) {
+              right = column;
+              unchangedPixels = 0;
+            } else if (++unchangedPixels >= 8) {
+              ++column;
+              break;
+            }
+          }
+          const int16_t spanWidth = right - left + 1;
+          if (!pending.empty() && pending.bottom() == row && pending.x == left &&
+              pending.w == spanWidth) {
+            ++pending.h;
+          } else {
+            flushPending();
+            pending = Rect(left, row, spanWidth, 1);
+          }
+        }
+      }
+      flushPending();
+      if (transferStarted) {
+        tft_->endWrite();
+      }
+    }
   }
   gfx_ = tft_;
 }
@@ -121,14 +195,13 @@ void Canvas::fillRect(Rect r, Color color) {
 }
 
 void Canvas::drawRect(Rect r, Color color) {
-  if (gfx_ == nullptr) {
+  if (r.empty()) {
     return;
   }
-  r = mapRect(r);
-  if (!clipRect(r)) {
-    return;
-  }
-  gfx_->drawRect(r.x, r.y, r.w, r.h, color);
+  hLine(r.x, r.y, r.w, color);
+  hLine(r.x, static_cast<int16_t>(r.bottom() - 1), r.w, color);
+  vLine(r.x, r.y, r.h, color);
+  vLine(static_cast<int16_t>(r.right() - 1), r.y, r.h, color);
 }
 
 void Canvas::hLine(int16_t x, int16_t y, int16_t w, Color color) {

@@ -1,5 +1,7 @@
 #include "Pages.h"
 
+#include <Config.h>
+#include <Console.h>
 #include <Image.h>
 #include <Ui.h>
 #include <esp_heap_caps.h>
@@ -68,8 +70,8 @@ void BootPage::draw(Somnium::Ui::Canvas &c) {
   Brand::drawLogo(c, static_cast<int16_t>((c.width() - kLogoW) / 2), 28);
 
   // Same L→R trio as Process: fire · salt · whisk
-  KitchenAnim::drawFire(c, 72, 118, elapsed_, T().pinkDim);
-  KitchenAnim::drawSalt(c, 160, 108, elapsed_, T().text);
+  KitchenAnim::drawFire(c, 72, 110, elapsed_, T().pinkDim);
+  KitchenAnim::drawSalt(c, 160, 110, elapsed_, T().text);
   KitchenAnim::drawWhisk(c, 248, 110, elapsed_ + 200, T().pinkDim);
 
   const float p = static_cast<float>(elapsed_) / static_cast<float>(kBootMs);
@@ -95,11 +97,14 @@ void ModePage::nudge(int delta) {
     return;
   }
   if (slideTween_.active) {
-    pendingNudge_ += delta > 0 ? 1 : -1;
+    pendingNudge_ += delta;
     return;
   }
-  index_ += delta > 0 ? 1 : -1;
-  slideTween_.start(delta > 0 ? 1.0f : -1.0f, 0.0f, 360, millis(),
+  const int direction = delta > 0 ? 1 : -1;
+  pendingNudge_ += delta - direction;
+  index_ = (index_ + direction + kModeCount) % kModeCount;
+  slide_ = static_cast<float>(direction);
+  slideTween_.start(slide_, 0.0f, 260, millis(),
                     Somnium::Ui::Easing::easeInOutQuad);
   headerOnly_ = false;
   markDirty();
@@ -167,10 +172,14 @@ void ModePage::drawPanel(Somnium::Ui::Canvas &c, int modeIndex, float slot,
   const int16_t cy = static_cast<int16_t>(118 + depth * 10);
   const int16_t x = static_cast<int16_t>(cx - w / 2);
   const int16_t y = static_cast<int16_t>(cy - h / 2);
+  if (w <= 0 || h <= 0 || x >= c.width() || x + w <= 0) {
+    return;
+  }
 
   const Mode &mode = modeAt(modeIndex);
-  const bool front = depth < 0.35f;
-  const Color frame = front ? T().text : T().pinkDim;
+  const float emphasis = Somnium::Ui::Easing::clamp01(1.0f - depth);
+  const Color frame =
+      Somnium::Ui::Easing::lerpColor(T().pinkDim, T().text, emphasis);
   c.fillRect(Rect(x, y, w, h), T().surfaceAlt);
   c.drawRect(Rect(x, y, w, h), frame);
 
@@ -178,26 +187,47 @@ void ModePage::drawPanel(Somnium::Ui::Canvas &c, int modeIndex, float slot,
   c.fillRect(Rect(static_cast<int16_t>(x + 6), static_cast<int16_t>(y + 6),
                   static_cast<int16_t>(w - 12), imgH),
              Color(mode.placeholderColor));
-
-  if (front) {
-    Brand::drawTitleFont(c, mode.label, static_cast<int16_t>(x + 18),
-                         static_cast<int16_t>(y + h - 28), T().text);
-  } else {
-    Text::drawIn(c, mode.label,
-                 Rect(x, static_cast<int16_t>(y + h - 28), w, 20),
-                 mutedCenter());
+  if (mode.preview != nullptr && w > 12 && imgH > 0) {
+    uint16_t row[kModePreviewWidth];
+    const int16_t previewWidth = static_cast<int16_t>(w - 12);
+    for (int16_t rowY = 0; rowY < imgH; ++rowY) {
+      const int16_t sourceY = rowY * kModePreviewHeight / imgH;
+      for (int16_t col = 0; col < previewWidth; ++col) {
+        const int16_t sourceX = col * kModePreviewWidth / previewWidth;
+        row[col] = pgm_read_word(
+            &mode.preview[sourceY * kModePreviewWidth + sourceX]);
+      }
+      c.blitRgb565(static_cast<int16_t>(x + 6),
+                   static_cast<int16_t>(y + 6 + rowY), previewWidth, 1, row);
+    }
   }
+
+  const int16_t titleY = static_cast<int16_t>(y + imgH + 12);
+  const int16_t titleHeight = static_cast<int16_t>(h - imgH - 20);
+  Brand::drawTitleIn(
+      c, mode.label,
+      Rect(static_cast<int16_t>(x + 8), titleY,
+           static_cast<int16_t>(w - 16), titleHeight),
+      Somnium::Ui::Easing::lerpColor(T().textMuted, T().text, emphasis));
 }
 
 void ModePage::drawCarousel(Somnium::Ui::Canvas &c) {
   c.fillRect(Rect(0, 22, c.width(), static_cast<int16_t>(c.height() - 22)),
              T().bg);
-  drawPanel(c, index_ - 2, -2.0f, slide_);
-  drawPanel(c, index_ + 2, 2.0f, slide_);
-  drawPanel(c, index_ - 1, -1.0f, slide_);
-  drawPanel(c, index_ + 1, 1.0f, slide_);
-  drawPanel(c, index_, 0.0f, slide_);
-  Text::drawIn(c, "dial turn modes · click storage · shutter shoot",
+  int slots[] = {-3, -2, -1, 0, 1, 2, 3};
+  for (int i = 1; i < 7; ++i) {
+    const int slot = slots[i];
+    int j = i;
+    while (j > 0 && fabsf(slots[j - 1] + slide_) < fabsf(slot + slide_)) {
+      slots[j] = slots[j - 1];
+      --j;
+    }
+    slots[j] = slot;
+  }
+  for (int slot : slots) {
+    drawPanel(c, index_ + slot, static_cast<float>(slot), slide_);
+  }
+  Text::drawIn(c, "dial: modes | click: storage | shutter: shoot",
                Rect(0, 220, c.width(), 14), mutedCenter());
 }
 
@@ -214,8 +244,9 @@ void ModePage::draw(Somnium::Ui::Canvas &c) {
 
 void ProcessPage::onEnter() {
   elapsed_ = 0;
+  animationMs_ = 0;
   failed_ = false;
-  strncpy(status_, "warming up…", sizeof(status_) - 1);
+  strncpy(status_, "warming up...", sizeof(status_) - 1);
   status_[sizeof(status_) - 1] = '\0';
   markDirty();
 }
@@ -223,15 +254,16 @@ void ProcessPage::onEnter() {
 void ProcessPage::setStatus(const char *status) {
   strncpy(status_, status != nullptr ? status : "", sizeof(status_) - 1);
   status_[sizeof(status_) - 1] = '\0';
-  if (strstr(status_, "fail") != nullptr || strstr(status_, "no ") != nullptr) {
-    failed_ = true;
-  }
   markDirty();
 }
 
 void ProcessPage::update(uint32_t dtMs) {
   elapsed_ += dtMs;
-  markDirty();
+  animationMs_ += dtMs;
+  if (animationMs_ >= 100) {
+    animationMs_ %= 100;
+    markDirty();
+  }
 }
 
 void ProcessPage::draw(Somnium::Ui::Canvas &c) {
@@ -246,10 +278,10 @@ void ProcessPage::draw(Somnium::Ui::Canvas &c) {
   c.fillRect(Rect(244, y, 40, 40), T().surfaceAlt);
   c.hLine(76, static_cast<int16_t>(y + 20), 64, T().text);
   c.hLine(180, static_cast<int16_t>(y + 20), 64, T().text);
-  KitchenAnim::drawFire(c, 56, static_cast<int16_t>(y + 14), elapsed_, T().text);
-  KitchenAnim::drawSalt(c, 160, static_cast<int16_t>(y + 12), elapsed_,
+  KitchenAnim::drawFire(c, 56, static_cast<int16_t>(y + 20), elapsed_, T().text);
+  KitchenAnim::drawSalt(c, 160, static_cast<int16_t>(y + 20), elapsed_,
                         T().pinkDim);
-  KitchenAnim::drawWhisk(c, 264, static_cast<int16_t>(y + 10), elapsed_,
+  KitchenAnim::drawWhisk(c, 264, static_cast<int16_t>(y + 20), elapsed_,
                          T().text);
 
   Text::drawIn(c, failed_ ? "Kitchen trouble" : "Magic is Happening...",
@@ -307,7 +339,7 @@ void PreviewPage::beginReview(const char *modeLabel, const uint8_t *jpeg,
   total_ = 0;
   back_ = false;
   autoDone_ = false;
-  elapsed_ = 0;
+  reviewStartedMs_ = 0;
   setPhoto(jpeg, length);
 }
 
@@ -323,6 +355,9 @@ void PreviewPage::setPhoto(const uint8_t *jpeg, size_t length) {
   releaseRgb();
   jpeg_ = jpeg;
   jpegLen_ = length;
+  decodePending_ = jpeg_ != nullptr && jpegLen_ > 0;
+  allowDecode_ = false;
+  previewPresented_ = false;
   markDirty();
 }
 
@@ -336,7 +371,8 @@ void PreviewPage::setMeta(const char *modeLabel, int index1Based, int total) {
 void PreviewPage::onEnter() {
   back_ = false;
   autoDone_ = false;
-  elapsed_ = 0;
+  previewPresented_ = false;
+  reviewStartedMs_ = 0;
   clockMs_ = 0;
   markDirty();
 }
@@ -344,13 +380,22 @@ void PreviewPage::onEnter() {
 void PreviewPage::onExit() { releaseRgb(); }
 
 void PreviewPage::update(uint32_t dtMs) {
-  elapsed_ += dtMs;
   clockMs_ += dtMs;
-  if (kind_ == Kind::Review && elapsed_ >= kReviewMs) {
+  if (kind_ == Kind::Review && previewPresented_ &&
+      millis() - reviewStartedMs_ >= kReviewMs) {
     autoDone_ = true;
   }
   if (clockMs_ >= 1000) {
     clockMs_ = 0;
+    markDirty();
+  }
+  if (decodePending_ && allowDecode_ && !rgbOk_) {
+    decodePending_ = false;
+    if (!ensureRgb(Somnium::Defaults::kDisplayWidth,
+                   Somnium::Defaults::kDisplayHeight)) {
+      Somnium::Console::printf("JPEG decode failed %u B\n",
+                               static_cast<unsigned>(jpegLen_));
+    }
     markDirty();
   }
 }
@@ -392,11 +437,18 @@ bool PreviewPage::handleAction(Somnium::Ui::NavAction action) {
 
 void PreviewPage::drawChrome(Somnium::Ui::Canvas &c) {
   c.fillRect(Rect(0, 0, c.width(), 22), T().surface);
-  Text::draw(c, "dial-click back", 6, 7, TextStyle(T().text, 1));
+  Text::drawIn(c, "dial-click back", Rect(6, 7, c.width() - 12, 8),
+               TextStyle(T().text, 1));
 
   c.fillRect(Rect(0, static_cast<int16_t>(c.height() - 28), c.width(), 28),
              T().surface);
 
+  char when[32];
+  Chrono::formatDateTime(when, sizeof(when));
+  const int16_t clockWidth = Text::measure(when, 1).w;
+  const int16_t clockX = static_cast<int16_t>(c.width() - clockWidth - 8);
+  const Rect metadataBox(8, static_cast<int16_t>(c.height() - 18),
+                         static_cast<int16_t>(clockX - 16), 8);
   if (kind_ == Kind::Storage) {
     char meta[40];
     if (total_ <= 0) {
@@ -404,35 +456,34 @@ void PreviewPage::drawChrome(Somnium::Ui::Canvas &c) {
     } else {
       snprintf(meta, sizeof(meta), "%s  %d/%d", modeLabel_, index_, total_);
     }
-    Text::draw(c, meta, 8, static_cast<int16_t>(c.height() - 18),
-               TextStyle(T().text, 1));
+    Text::drawIn(c, meta, metadataBox, TextStyle(T().text, 1));
   } else {
-    Text::draw(c, modeLabel_ != nullptr ? modeLabel_ : "dream", 8,
-               static_cast<int16_t>(c.height() - 18), TextStyle(T().text, 1));
+    Text::drawIn(c, modeLabel_ != nullptr ? modeLabel_ : "dream", metadataBox,
+                 TextStyle(T().text, 1));
   }
 
-  char when[32];
-  Chrono::formatDateTime(when, sizeof(when));
-  const int16_t tw = Text::measure(when, 1).w;
-  Text::draw(c, when, static_cast<int16_t>(c.width() - tw - 8),
-             static_cast<int16_t>(c.height() - 18), TextStyle(T().text, 1));
-  c.hLine(static_cast<int16_t>(c.width() - tw - 8),
-          static_cast<int16_t>(c.height() - 8), tw, T().pinkDim);
+  Text::drawIn(c, when,
+               Rect(clockX, static_cast<int16_t>(c.height() - 18), clockWidth, 8),
+               TextStyle(T().text, 1));
+  c.hLine(clockX, static_cast<int16_t>(c.height() - 8), clockWidth, T().pinkDim);
 }
 
 void PreviewPage::draw(Somnium::Ui::Canvas &c) {
   c.clear(T().bg);
-  if (jpeg_ != nullptr && jpegLen_ > 0) {
-    // Decode once into RGB565 — re-decoding every frame locks the UI (dial dies).
-    if (ensureRgb(c.width(), c.height())) {
-      c.blitRgb565(0, 0, rgbW_, rgbH_, rgb_);
-    } else {
-      Somnium::Image::drawJpeg(jpeg_, jpegLen_, c.gfx());
-    }
+  if (rgbOk_ && rgb_ != nullptr) {
+    c.blitRgb565(0, 0, rgbW_, rgbH_, rgb_);
   } else if (kind_ == Kind::Storage && total_ <= 0) {
     Text::drawIn(c, "no plates yet", Rect(0, 110, c.width(), 20), mutedCenter());
-  } else {
+  } else if (decodePending_) {
     Text::drawIn(c, "plating...", Rect(0, 110, c.width(), 20), mutedCenter());
+    allowDecode_ = true;
+  } else {
+    Text::drawIn(c, "image unavailable", Rect(0, 110, c.width(), 20),
+                 mutedCenter());
+  }
+  if (!decodePending_ && !previewPresented_) {
+    previewPresented_ = true;
+    reviewStartedMs_ = millis();
   }
   drawChrome(c);
 }

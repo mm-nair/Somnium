@@ -47,9 +47,15 @@ struct Brand {
     gfx->setFont(&SOMNIUM_TITLE_FONT);
     gfx->setTextColor(color);
     gfx->setTextSize(1);
+    gfx->setTextWrap(false);
     gfx->setCursor(x + o.x, y + o.y);
     gfx->print(text);
     gfx->setFont(nullptr);
+  }
+
+  static void drawTitleIn(Somnium::Ui::Canvas &c, const char *text,
+                          Somnium::Ui::Rect box, Somnium::Ui::Color color) {
+    Somnium::Ui::Text::drawFontIn(c, text, box, SOMNIUM_TITLE_FONT, color);
   }
 
   static void drawHeader(Somnium::Ui::Canvas &c, const Somnium::Ui::Theme &theme,

@@ -6,13 +6,18 @@
 #include <string.h>
 
 #include "Console.h"
+#include "Image.h"
 
 namespace Somnium {
 namespace {
 
 bool gReady = false;
 constexpr int kMaxPhotos = 64;
-char gPaths[kMaxPhotos][64];
+struct PhotoEntry {
+  char path[64];
+  time_t modified;
+};
+PhotoEntry gPhotos[kMaxPhotos];
 int gCount = 0;
 bool gListed = false;
 
@@ -34,7 +39,15 @@ bool endsWithJpg(const char *name) {
 }
 
 int pathCmp(const void *a, const void *b) {
-  return strcmp(static_cast<const char *>(a), static_cast<const char *>(b));
+  const auto &first = *static_cast<const PhotoEntry *>(a);
+  const auto &second = *static_cast<const PhotoEntry *>(b);
+  if (first.modified < second.modified) {
+    return -1;
+  }
+  if (first.modified > second.modified) {
+    return 1;
+  }
+  return strcmp(first.path, second.path);
 }
 
 void rescan() {
@@ -48,7 +61,7 @@ void rescan() {
     return;
   }
   File entry = dir.openNextFile();
-  while (entry && gCount < kMaxPhotos) {
+  while (entry) {
     if (!entry.isDirectory()) {
       const char *name = entry.name();
       const char *base = name;
@@ -56,13 +69,26 @@ void rescan() {
         base = slash + 1;
       }
       if (endsWithJpg(base)) {
+        PhotoEntry photo{};
         if (name[0] == '/') {
-          strncpy(gPaths[gCount], name, sizeof(gPaths[gCount]) - 1);
+          strncpy(photo.path, name, sizeof(photo.path) - 1);
         } else {
-          snprintf(gPaths[gCount], sizeof(gPaths[gCount]), "/somnium/%s", base);
+          snprintf(photo.path, sizeof(photo.path), "/somnium/%s", base);
         }
-        gPaths[gCount][sizeof(gPaths[gCount]) - 1] = '\0';
-        gCount += 1;
+        photo.modified = entry.getLastWrite();
+        if (gCount < kMaxPhotos) {
+          gPhotos[gCount++] = photo;
+        } else {
+          int oldest = 0;
+          for (int i = 1; i < gCount; ++i) {
+            if (pathCmp(&gPhotos[i], &gPhotos[oldest]) < 0) {
+              oldest = i;
+            }
+          }
+          if (pathCmp(&photo, &gPhotos[oldest]) > 0) {
+            gPhotos[oldest] = photo;
+          }
+        }
       }
     }
     entry.close();
@@ -70,7 +96,7 @@ void rescan() {
   }
   dir.close();
   if (gCount > 1) {
-    qsort(gPaths, static_cast<size_t>(gCount), sizeof(gPaths[0]), pathCmp);
+    qsort(gPhotos, static_cast<size_t>(gCount), sizeof(gPhotos[0]), pathCmp);
   }
 }
 
@@ -98,6 +124,25 @@ bool Storage::begin() {
 }
 
 bool Storage::ready() { return gReady; }
+
+int Storage::nextShotNumber(const char *styleId, int minimumShot) {
+  int shot = minimumShot;
+  if (!gReady) {
+    return shot;
+  }
+  char originalPath[72];
+  char dreamPath[72];
+  while (true) {
+    snprintf(originalPath, sizeof(originalPath), "/somnium/%s_%d_0_orig.jpg",
+             styleId, shot);
+    snprintf(dreamPath, sizeof(dreamPath), "/somnium/%s_%d_1_dream.jpg",
+             styleId, shot);
+    if (!SD_MMC.exists(originalPath) && !SD_MMC.exists(dreamPath)) {
+      return shot;
+    }
+    ++shot;
+  }
+}
 
 void Storage::clearGallery() {
   if (!gReady) {
@@ -183,7 +228,7 @@ bool Storage::photoPathAt(int index, char *out, size_t outLen) {
   if (index < 0 || index >= gCount) {
     return false;
   }
-  strncpy(out, gPaths[index], outLen - 1);
+  strncpy(out, gPhotos[index].path, outLen - 1);
   out[outLen - 1] = '\0';
   return true;
 }
@@ -214,7 +259,7 @@ bool Storage::loadJpeg(const char *path, uint8_t **outData, size_t *outLen) {
   }
   const size_t got = file.read(buf, len);
   file.close();
-  if (got != len || buf[0] != 0xFF || buf[1] != 0xD8) {
+  if (got != len || !Image::looksLikeJpeg(buf, len)) {
     free(buf);
     return false;
   }

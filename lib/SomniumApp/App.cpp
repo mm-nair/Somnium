@@ -1,5 +1,6 @@
 #include "App.h"
 
+#include <Camera.h>
 #include <Config.h>
 #include <Console.h>
 #include <Host.h>
@@ -89,6 +90,9 @@ const char *styleToken(const char *base) {
   if (strstr(base, "anime") != nullptr) {
     return "ANIME";
   }
+  if (strstr(base, "pencil") != nullptr) {
+    return "PENCIL";
+  }
   return "PLATE";
 }
 
@@ -107,20 +111,20 @@ const char *labelFromPath(const char *path) {
              strstr(base, "_mod") != nullptr) {
     kind = "mod";
   }
-  snprintf(gLabelBuf, sizeof(gLabelBuf), "%s·%s", style, kind);
+  snprintf(gLabelBuf, sizeof(gLabelBuf), "%s-%s", style, kind);
   return gLabelBuf;
 }
 
-void galPush(const char *label, const uint8_t *data, size_t len) {
+bool galPush(const char *label, const uint8_t *data, size_t len) {
   if (data == nullptr || len == 0) {
-    return;
+    return false;
   }
   uint8_t *copy = static_cast<uint8_t *>(ps_malloc(len));
   if (copy == nullptr) {
     copy = static_cast<uint8_t *>(malloc(len));
   }
   if (copy == nullptr) {
-    return;
+    return false;
   }
   memcpy(copy, data, len);
 
@@ -136,6 +140,7 @@ void galPush(const char *label, const uint8_t *data, size_t len) {
   gGal[gGalCount].data = copy;
   gGal[gGalCount].len = len;
   gGalCount += 1;
+  return true;
 }
 
 void savePair(const char *styleId, int shot, const uint8_t *orig, size_t origLen,
@@ -144,32 +149,40 @@ void savePair(const char *styleId, int shot, const uint8_t *orig, size_t origLen
   char label[20];
 
   if (orig != nullptr && origLen > 0) {
-    snprintf(label, sizeof(label), "%s·raw", styleToken(styleId));
-    galPush(label, orig, origLen);
+    snprintf(label, sizeof(label), "%s-raw", styleToken(styleId));
+    bool saved = false;
     if (Somnium::Storage::ready()) {
       snprintf(path, sizeof(path), "/somnium/%s_%d_0_orig.jpg", styleId, shot);
-      Somnium::Storage::saveJpeg(path, orig, origLen);
+      saved = Somnium::Storage::saveJpeg(path, orig, origLen);
+      if (!saved) {
+        Somnium::Console::printf("ERR SD save %s\n", path);
+      }
+    }
+    if (!saved && !galPush(label, orig, origLen)) {
+      Somnium::Console::println("ERR gallery original not saved");
     }
   }
   if (dream != nullptr && dreamLen > 0) {
-    snprintf(label, sizeof(label), "%s·mod", styleToken(styleId));
-    galPush(label, dream, dreamLen);
+    snprintf(label, sizeof(label), "%s-mod", styleToken(styleId));
+    bool saved = false;
     if (Somnium::Storage::ready()) {
       snprintf(path, sizeof(path), "/somnium/%s_%d_1_dream.jpg", styleId, shot);
-      Somnium::Storage::saveJpeg(path, dream, dreamLen);
+      saved = Somnium::Storage::saveJpeg(path, dream, dreamLen);
+      if (!saved) {
+        Somnium::Console::printf("ERR SD save %s\n", path);
+      }
+    }
+    if (!saved && !galPush(label, dream, dreamLen)) {
+      Somnium::Console::println("ERR gallery dream not saved");
     }
   }
-  Somnium::Console::printf("GAL %d plates (sd=%d)\n", gGalCount,
-                           Somnium::Storage::ready() ? 1 : 0);
+  const int savedCount = Somnium::Storage::photoCount();
+  Somnium::Console::printf("GAL %d plates (sd=%d ram=%d)\n",
+                           savedCount + gGalCount, savedCount, gGalCount);
 }
 
 int browseCount() {
-  // Prefer in-RAM gallery (trusted copies from this session). SD is a backup
-  // when RAM is empty (e.g. after a future persist-only path).
-  if (gGalCount > 0) {
-    return gGalCount;
-  }
-  return Somnium::Storage::photoCount();
+  return Somnium::Storage::photoCount() + gGalCount;
 }
 
 bool loadStorageIndex(int index0) {
@@ -182,12 +195,13 @@ bool loadStorageIndex(int index0) {
     return false;
   }
 
-  if (gGalCount > 0) {
-    // RAM gallery (raw/mod pairs from this boot).
-    strncpy(gStorageLabel, gGal[index0].label, sizeof(gStorageLabel) - 1);
+  const int savedCount = Somnium::Storage::photoCount();
+  if (index0 >= savedCount) {
+    const int galleryIndex = index0 - savedCount;
+    strncpy(gStorageLabel, gGal[galleryIndex].label, sizeof(gStorageLabel) - 1);
     gStorageLabel[sizeof(gStorageLabel) - 1] = '\0';
-    gStorageJpeg = gGal[index0].data;
-    gStorageLen = gGal[index0].len;
+    gStorageJpeg = gGal[galleryIndex].data;
+    gStorageLen = gGal[galleryIndex].len;
     gPreview.setPhoto(gStorageJpeg, gStorageLen);
     gPreview.setMeta(gStorageLabel, index0 + 1, n);
     return true;
@@ -221,7 +235,7 @@ void showMode() {
 
 void showProcess() {
   gProcess.setModeLabel(gMode.selected().label);
-  gProcess.setStatus("warming up…");
+  gProcess.setStatus("warming up...");
   gProcess.clearFailed();
   gScreen = Screen::Process;
   gAwaitProcessWork = true;
@@ -230,8 +244,7 @@ void showProcess() {
 }
 
 void showReview() {
-  gShotCount += 1;
-  snprintf(gReviewTitle, sizeof(gReviewTitle), "%s · dream",
+  snprintf(gReviewTitle, sizeof(gReviewTitle), "%s - dream",
            gMode.selected().label);
   gPreview.beginReview(gReviewTitle, gResultJpeg, gResultLen);
   gScreen = Screen::Review;
@@ -247,6 +260,8 @@ void pumpCookUi() {
 void failProcess(const char *status) {
   Somnium::Console::printf("ERR process %s\n", status != nullptr ? status : "?");
   gProcess.setStatus(status);
+  gProcess.setFailed();
+  Somnium::Host::setPump(nullptr);
   gAwaitProcessWork = false;
   gProcessHolding = true;
 }
@@ -279,21 +294,22 @@ void runPipeline() {
   Somnium::Host::setPump(pumpCookUi);
 
   if (!gCameraOk) {
-    failProcess("no camera — dial back");
+    failProcess("no camera - dial back");
     return;
   }
 
-  gProcess.setStatus("snap…");
+  gProcess.setStatus("snap...");
   pumpCookUi();
   Somnium::JpegBuffer photo;
   if (!Somnium::Image::takePhoto(photo)) {
-    failProcess("capture fail — dial back");
+    failProcess("capture fail - dial back");
     return;
   }
+  // Sensor draws hard — power it down for the long USB/xAI wait so the
+  // CH340 doesn't fall off the USB bus (kernel error -71 / ACM gone).
+  Somnium::Camera::end();
 
-  // Capture can briefly touch the display path — restore Process chrome.
-  gProcess.setStatus("usb → thinkpad…");
-  pumpCookUi();
+  gProcess.setStatus("usb > thinkpad...");
   pumpCookUi();
 
   Somnium::JpegBuffer dream{};
@@ -311,7 +327,9 @@ void runPipeline() {
 
   Somnium::Console::printf("USB cook ok %u B\n",
                            static_cast<unsigned>(dream.length));
-  savePair(gMode.selected().id, gShotCount + 1, photo.data, photo.length,
+  gShotCount = Somnium::Storage::nextShotNumber(gMode.selected().id,
+                                              gShotCount + 1);
+  savePair(gMode.selected().id, gShotCount, photo.data, photo.length,
            dream.data, dream.length);
   Somnium::Image::freePhoto(photo);
 
@@ -319,7 +337,10 @@ void runPipeline() {
   gResultJpeg = dream.data;
   gResultLen = dream.length;
   dream.data = nullptr;
+  Somnium::Host::setPump(nullptr);
+  // Next shutter re-inits the sensor via Camera::captureJpeg.
   showReview();
+  Somnium::Console::println("UI review");
 }
 
 void mapInputs() {

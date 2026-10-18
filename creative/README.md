@@ -12,6 +12,11 @@ That regenerates firmware headers from this folder:
 | --- | --- |
 | `creative.json` → `theme`, `modes`, `ui.font` | `lib/SomniumApp/CreativeGen.h`, `Modes.h` |
 | `logo.png` | `lib/SomniumApp/LogoBitmap.h` |
+| `modes[].preview` → `previews/*.jpg` | `lib/SomniumApp/ModeBitmaps.h` |
+
+Mode previews are compiled as 138x82 RGB565 thumbnails. Images retain their full
+composition with black padding where needed. The carousel scales them inside
+the existing image rectangles. A mode without `preview` uses its tint placeholder.
 
 ## Add a mode
 
@@ -43,10 +48,26 @@ keeping the same crop.
 
 ## Mood → artifacts map
 
-`mood_artifacts` picks **one** subtle optical accent from weather/day-night
-(soft glare, grain, vignette, tint…). Edit pools freely; `pick` controls count.
+`mood_artifacts` picks **two** restrained lighting cues: weather and day/night. Temperature
+and wind fill remaining slots when applicable. Edit pools freely; `pick` controls
+the total count, and `always` entries are retained.
 
-Style grade leads; mood is a quiet accent — not a scene rewrite.
+The prompt writer combines those cues into at most one short lighting sentence.
+The medium, subject, and palette take priority. Cues adjust exposure, color
+temperature, shadow softness, or reflected light on existing surfaces.
+Astronomy remains metadata only. Both prompt paths use the selected `artifacts`
+and never fall back to the raw sky summary or `mood_watermark` field.
+
+SURPRISE uses `variations` to select a treatment, palette, and focus in code.
+Each category excludes its previous choice within the running pipeline. The
+selected values are saved in output metadata and used by both prompt providers.
+PENCIL SKETCH uses full-color pencil strokes and colored shadows on ivory paper.
+
+Prompts follow [xAI's image prompting guide](https://docs.x.ai/developers/model-capabilities/images/prompting-guide):
+lead with the edit, describe physical materials and readable light, then preserve
+the subject and layout. Image-provider constraints follow the requested edit.
+All five style drafts describe their own rendering techniques. Preserve the
+existing interior, sky, or ceiling; atmosphere is not permission to add scenery.
 
 ## Models
 

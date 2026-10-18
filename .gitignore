@@ -4,6 +4,7 @@
 .vscode/launch.json
 .vscode/ipch
 server/outputs/
+proc_output/
 .env
 *.jpg
 !creative/**/*.jpg
@@ -14,3 +15,5 @@ __pycache__/
 tests/__pycache__/
 server/**/__pycache__/
 .DS_Store
+
+process/

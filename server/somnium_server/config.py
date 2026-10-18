@@ -77,6 +77,7 @@ def load_config() -> dict[str, Any]:
                 "prompt": m.get("prompt", ""),
                 "real": bool(m.get("real", False)),
                 "liberal": bool(m.get("liberal", False)),
+                "variations": m.get("variations", {}),
             }
             for mid, m in modes.items()
         },
@@ -89,11 +90,9 @@ def load_config() -> dict[str, Any]:
             "system": creative.get("prompt_system", ""),
             "user_template": (
                 "Style: {style_label} ({style_keywords}).\n"
-                "Mood (flavor lightly, do not dominate): {context_summary}\n"
-                "Captured: {taken_at}.\n"
                 "Draft: {prompt}\n"
-                "Rewrite as a SHORT edit prompt. Same crop. Style grade first; "
-                "mood artifact as a subtle accent only. No new scene. "
+                "Lighting finish only: {context_summary}\n"
+                "Lead with the transformation; preserve the same crop and scene layout. "
                 "Never add readable text, logos, watermarks, or place/event names."
             ),
         },

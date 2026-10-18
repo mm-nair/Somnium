@@ -1,30 +1,54 @@
 #!/usr/bin/env python3
-"""Camera-free Somnium cook — upload a test JPEG + style + timestamp.
+"""Camera-free Somnium cook — PNG/JPEG + style + timestamp through the filter.
 
-Uses the same pipeline as the ESP (context → xAI prompt → xAI image edit)
-and writes dual slideshow entries: *_0_orig.jpg and *_1_dream.jpg.
+Uses the same pipeline as the ESP (context → xAI prompt → xAI image edit).
 
   nix develop
-  # start server in another terminal: ./scripts/server.sh
-  ./scripts/cook.sh photo.jpg --style noir --at 2026-10-17T19:30:00Z
-
-  # Or hit the pipeline in-process (no HTTP server needed):
-  python tools/cook.py photo.jpg --style noir --at 2026-10-17T19:30:00Z --local
+  ./scripts/cook.sh process --style anime
+  ./scripts/cook.sh process/nyc.png --style anime --out-dir proc_output
 """
 
 from __future__ import annotations
 
 import argparse
-import json
+import io
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _to_jpeg(raw: bytes) -> bytes:
+    if raw[:2] == b"\xff\xd8":
+        return raw
+    from PIL import Image
+
+    im = Image.open(io.BytesIO(raw))
+    if im.mode not in ("RGB", "L"):
+        im = im.convert("RGB")
+    elif im.mode == "L":
+        im = im.convert("RGB")
+    buf = io.BytesIO()
+    im.save(buf, format="JPEG", quality=92, optimize=True)
+    return buf.getvalue()
+
+
+def _collect_images(path: Path) -> list[Path]:
+    if path.is_file():
+        return [path]
+    if not path.is_dir():
+        return []
+    return sorted(
+        p
+        for p in path.iterdir()
+        if p.is_file() and p.suffix.lower() in IMAGE_EXTS
+    )
 
 
 def cook_local(
@@ -34,6 +58,7 @@ def cook_local(
     lat: float | None,
     lon: float | None,
     force_real: bool,
+    out_dir: Path,
 ) -> int:
     sys.path.insert(0, str(ROOT / "server"))
     from somnium_server.config import load_config
@@ -41,10 +66,12 @@ def cook_local(
 
     cfg = load_config()
     pipe = Pipeline(cfg)
-    raw = image_path.read_bytes()
-    if raw[:2] != b"\xff\xd8":
-        print("error: expected JPEG", file=sys.stderr)
+    try:
+        raw = _to_jpeg(image_path.read_bytes())
+    except Exception as err:  # noqa: BLE001 — surface bad image clearly
+        print(f"error: cannot read {image_path.name}: {err}", file=sys.stderr)
         return 1
+
     print(f"cooking {image_path.name} style={style} at={taken_at} …")
     result = pipe.process(
         image=raw,
@@ -55,10 +82,18 @@ def cook_local(
         lon=lon,
         force_real=force_real,
     )
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stem = image_path.stem
+    orig_out = out_dir / f"{stem}_orig.jpg"
+    dream_out = out_dir / f"{stem}_dream.jpg"
+    orig_out.write_bytes(result.original)
+    dream_out.write_bytes(result.image)
+
     print("context:", result.context.get("summary"))
     print("prompt:", result.prompt)
-    print("orig: ", result.meta.get("orig_path"))
-    print("dream:", result.meta.get("dream_path"))
+    print("orig: ", orig_out)
+    print("dream:", dream_out)
     return 0
 
 
@@ -70,6 +105,7 @@ def cook_http(
     lon: float | None,
     force_real: bool,
     base_url: str,
+    out_dir: Path,
 ) -> int:
     import urllib.error
     import urllib.request
@@ -86,7 +122,12 @@ def cook_http(
     if force_real:
         fields.append(("force_real", "1"))
 
-    raw = image_path.read_bytes()
+    try:
+        raw = _to_jpeg(image_path.read_bytes())
+    except Exception as err:  # noqa: BLE001
+        print(f"error: cannot read {image_path.name}: {err}", file=sys.stderr)
+        return 1
+
     chunks: list[bytes] = []
     for name, value in fields:
         chunks.append(f"--{boundary}\r\n".encode())
@@ -99,7 +140,7 @@ def cook_http(
     chunks.append(
         (
             'Content-Disposition: form-data; name="image"; '
-            f'filename="{image_path.name}"\r\n'
+            f'filename="{image_path.stem}.jpg"\r\n'
             "Content-Type: image/jpeg\r\n\r\n"
         ).encode()
     )
@@ -127,25 +168,37 @@ def cook_http(
         print(f"error: {err} — is ./scripts/server.sh running?", file=sys.stderr)
         return 1
 
-    out = ROOT / "server" / "outputs" / f"cook_{style}_dream.jpg"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_bytes(data)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    orig_out = out_dir / f"{image_path.stem}_orig.jpg"
+    dream_out = out_dir / f"{image_path.stem}_dream.jpg"
+    orig_out.write_bytes(raw)
+    dream_out.write_bytes(data)
     print("prompt:", headers.get("x-somnium-prompt", ""))
     print("context:", headers.get("x-somnium-context", ""))
-    print("dream saved:", out)
-    print("server also wrote dual entries under server/outputs/")
+    print("orig: ", orig_out)
+    print("dream:", dream_out)
     return 0
 
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("image", type=Path, help="Test JPEG path")
-    p.add_argument("--style", default="noir", help="Mode id from creative.json")
+    p.add_argument(
+        "image",
+        type=Path,
+        help="Image file or folder (e.g. process/)",
+    )
+    p.add_argument("--style", default="anime", help="Mode id from creative.json")
     p.add_argument(
         "--at",
         dest="taken_at",
         default=None,
         help="ISO-8601 UTC timestamp (default: now)",
+    )
+    p.add_argument(
+        "--out-dir",
+        type=Path,
+        default=ROOT / "proc_output",
+        help="Where to write {name}_orig.jpg / {name}_dream.jpg",
     )
     p.add_argument("--lat", type=float, default=None)
     p.add_argument("--lon", type=float, default=None)
@@ -165,28 +218,40 @@ def main() -> int:
         help="Force model call even if style.real is false",
     )
     args = p.parse_args()
-    if not args.image.is_file():
-        print(f"error: missing image {args.image}", file=sys.stderr)
+    images = _collect_images(args.image)
+    if not images:
+        print(f"error: no images in {args.image}", file=sys.stderr)
         return 1
+
     taken_at = args.taken_at or _iso_now()
-    if args.local:
-        return cook_local(
-            args.image,
-            args.style,
-            taken_at,
-            args.lat,
-            args.lon,
-            args.force_real or True,
-        )
-    return cook_http(
-        args.image,
-        args.style,
-        taken_at,
-        args.lat,
-        args.lon,
-        args.force_real or True,
-        args.http,
-    )
+    out_dir = args.out_dir if args.out_dir.is_absolute() else ROOT / args.out_dir
+    force_real = args.force_real or True
+    rc = 0
+    for image in images:
+        if args.local:
+            code = cook_local(
+                image,
+                args.style,
+                taken_at,
+                args.lat,
+                args.lon,
+                force_real,
+                out_dir,
+            )
+        else:
+            code = cook_http(
+                image,
+                args.style,
+                taken_at,
+                args.lat,
+                args.lon,
+                force_real,
+                args.http,
+                out_dir,
+            )
+        if code != 0:
+            rc = code
+    return rc
 
 
 if __name__ == "__main__":

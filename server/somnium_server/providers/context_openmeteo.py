@@ -118,6 +118,7 @@ def _fetch_open_meteo(lat: float, lon: float) -> dict[str, Any]:
             ),
             "daily": "sunrise,sunset,uv_index_max,daylight_duration",
             "timezone": "auto",
+            "wind_speed_unit": "ms",
             "forecast_days": 1,
         }
     )

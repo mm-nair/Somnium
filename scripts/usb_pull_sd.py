@@ -29,7 +29,7 @@ except ImportError as exc:  # pragma: no cover
 
 def open_serial(port: str) -> "serial.Serial":
     # Match usb_bridge: no DTR/RTS reset (would reboot the board).
-    s = serial.Serial()
+    s = serial.Serial(exclusive=True, write_timeout=10)
     s.port = port
     s.baudrate = 921600
     s.timeout = 0.3

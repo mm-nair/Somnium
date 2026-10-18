@@ -20,6 +20,8 @@ class Camera {
   using FrameCallback = void (*)(const camera_fb_t *frame);
 
   static bool begin(int width = 320);
+  // Power down the sensor (call after a snap; next capture re-inits).
+  static void end();
   static bool ready();
   static int activeWidth();
   static bool captureJpeg(JpegBuffer &out, int width = 320,

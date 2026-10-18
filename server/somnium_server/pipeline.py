@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +25,7 @@ class Pipeline:
     def __init__(self, cfg: dict[str, Any]):
         self.cfg = cfg
         self.stack = build_stack(cfg)
+        self.previous_variations: dict[str, dict[str, str]] = {}
         out = Path(cfg.get("server", {}).get("output_dir", "outputs"))
         if not out.is_absolute():
             out = Path(__file__).resolve().parent.parent / out
@@ -60,6 +62,18 @@ class Pipeline:
             style_id=style_id,
             creative=self.cfg.get("creative") or {},
         )
+        variation: dict[str, str] = {}
+        previous_variation = self.previous_variations.get(style_id, {})
+        for category, options in (style.get("variations") or {}).items():
+            candidates = [
+                option for option in options
+                if option != previous_variation.get(category)
+            ] or options
+            if candidates:
+                variation[category] = random.SystemRandom().choice(candidates)
+        if variation:
+            self.previous_variations[style_id] = variation
+            context["variation"] = variation
         prompt = self.stack["prompt"].synthesize(
             style_id=style_id,
             style=style,

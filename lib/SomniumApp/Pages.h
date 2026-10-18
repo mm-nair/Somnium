@@ -61,12 +61,17 @@ class ProcessPage : public Somnium::Ui::Page {
   void setStatus(const char *status);
   bool readyToWork() const { return elapsed_ > 400; }
   bool failed() const { return failed_; }
+  void setFailed() {
+    failed_ = true;
+    markDirty();
+  }
   void clearFailed() { failed_ = false; }
 
  private:
   uint32_t elapsed_ = 0;
+  uint32_t animationMs_ = 0;
   const char *label_ = "";
-  char status_[40] = "warming up…";
+  char status_[40] = "warming up...";
   bool failed_ = false;
 };
 
@@ -113,7 +118,10 @@ class PreviewPage : public Somnium::Ui::Page {
   int16_t rgbW_ = 0;
   int16_t rgbH_ = 0;
   bool rgbOk_ = false;
-  uint32_t elapsed_ = 0;
+  bool decodePending_ = false;
+  bool allowDecode_ = false;
+  bool previewPresented_ = false;
+  uint32_t reviewStartedMs_ = 0;
   uint32_t clockMs_ = 0;
 };
 

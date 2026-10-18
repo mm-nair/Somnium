@@ -18,112 +18,101 @@
     "muted": [140, 110, 125]
   },
   "mood_artifacts": {
-    "pick": 1,
+    "pick": 2,
     "always": [],
     "pools": {
       "night": [
-        "hint of cool moonlit shadow lift",
-        "very light film grain in the darks",
-        "soft corner vignette"
+        "slightly cooler ambient shadows with readable subject detail",
+        "gently lower background brightness while keeping the subjects well exposed"
       ],
       "day": [
-        "gentle sun-kissed highlight bloom",
-        "faint warm lens flare tick",
-        "slightly airier bright areas"
+        "open midtones and natural daylight balance",
+        "gently luminous highlights with surface detail retained"
       ],
       "clear": [
-        "crisper midtone contrast",
-        "barely-there chromatic fringe on edges"
+        "slightly firmer shadow edges along the existing light direction",
+        "cleaner light-to-shadow separation without increasing glare"
       ],
       "clearish": [
-        "soft specular sparkle on an existing highlight",
-        "light sun warmth on midtones"
+        "gently defined highlights on existing surfaces",
+        "slightly clearer midtone contrast"
       ],
       "cloud": [
-        "softer diffused shadows",
-        "slightly cooler lifted blacks"
+        "soft diffused light and smooth shadow transitions",
+        "gently softened shadow edges"
       ],
       "heavy_cloud": [
-        "muted overcast grade",
-        "gentler desaturated midtones"
+        "soft neutral highlights and gently reduced contrast",
+        "slightly cooler diffuse fill in existing shadows"
       ],
       "overcast": [
-        "soft flat light grade",
-        "chalky low-contrast highlights"
+        "broad soft light with neutral midtones",
+        "gently compressed contrast with readable dark areas"
       ],
       "rain": [
-        "cool damp cyan-green grade",
-        "faint wet sheen on already-shiny surfaces"
+        "slightly cooler reflected light on existing surfaces",
+        "soft gray-blue fill confined to existing shadows"
       ],
       "drizzle": [
-        "soft mist bloom in the air",
-        "light haze over distant parts of the frame"
+        "slightly softer highlights without visible haze",
+        "gently reduced background contrast"
       ],
       "snow": [
-        "cold blue-white grade",
-        "a few sparse bright flecks (keep subtle)"
+        "a slight cool bias in the reflected fill light",
+        "soft pale highlights with normal surface detail"
       ],
       "fog": [
-        "soft dream haze",
-        "lower contrast with milky lift"
+        "a small reduction in distant background contrast",
+        "soft background tonal transitions with a clearly defined subject"
       ],
       "thunder": [
-        "cooler edge light",
-        "slightly crunchier ISO grain"
+        "slightly deeper neutral shadows with readable detail",
+        "a restrained cool bias in the ambient fill"
       ],
       "cold": [
-        "icy blue shadow tint",
-        "cooler midtones"
+        "slightly cooler shadow colors within the chosen palette",
+        "a restrained cool bias in neutral midtones"
       ],
       "warm": [
-        "gentle golden midtone warmth",
-        "soft warm highlight roll-off"
+        "a small amount of warmth in existing highlights",
+        "gently warmer midtones within the chosen palette"
       ],
       "windy": [
-        "tiny motion softness on loose edges",
-        "light handheld grain"
-      ],
-      "full_moon": [
-        "pale silvery lift in highlights",
-        "soft cool edge light"
-      ],
-      "new_moon": [
-        "deeper blacks",
-        "quiet dark vignette"
-      ],
-      "moonlit": [
-        "cool tint in the shadows",
-        "soft nocturnal grain"
+        "soft tonal transitions at the frame edges",
+        "gentle edge contrast around the main subject"
       ]
     }
   },
   "modes": [
     {
       "id": "popcomic",
+      "preview": "previews/comic.jpg",
       "label": "COMIC",
       "real": true,
       "liberal": true,
       "tint": [220, 80, 180],
-      "keywords": "cel-shaded color grade, soft outlines, flat pastel tones",
-      "prompt": "Restyle this image as if it was from a pop comic frame. Same crop, do not overly-invent content, but keep the theme. Think cross-hatching, color work, etc. Subtly include mood: {context}."
+      "keywords": "vintage color comic, expressive brush inking, halftone shading, printed paper",
+      "prompt": "Redraw the supplied photo as a single vintage color-comic illustration. Use expressive brush-ink contours with varied line weight, broad shadow shapes, and selective cross-hatching. Build midtones from visible halftone dots and use a limited palette of warm red, mustard yellow, and muted blue on cream paper. Keep the main subjects crisply inked, with simpler shapes in the background; let paper texture sit beneath the ink without obscuring small features. Preserve individual facial features, expressions, clothing, and object shapes through confident hand-drawn simplification. Keep the original subjects, object count, poses, camera angle, crop, and background arrangement. Fill the frame with the illustration without added panels, lettering, or decoration. Lighting finish only: {context}."
     },
     {
       "id": "watercolor",
+      "preview": "previews/watercolor.jpg",
       "label": "WATERCOLOR",
       "real": true,
       "liberal": true,
       "tint": [255, 160, 60],
-      "keywords": "soft watercolor wash, paper tooth, pigment blooms",
-      "prompt": "Restyle this image as if it was painted in water colors. Very subtly change the sky/backdrop to be matching the mood. Same crop. Subtly include mood: {context}."
+      "keywords": "transparent watercolor, wet-on-wet color, selective dry brush, reserved paper highlights",
+      "prompt": "Repaint the supplied photo as a loose, luminous watercolor on warm cotton paper. Build volume with transparent overlapping washes and let adjacent colors mingle naturally in wet areas. Use a few dry-brush accents and sharper edges around the main subjects, with softer lost edges in the existing background. Show gentle pigment granulation in pooled color and preserve clean paper for highlights; leave enough unpainted breathing room that the image feels brushed rather than airbrushed. Keep the source colors recognizable, with nuanced warm and cool mixtures in the shadows. Preserve individual features and expressions through economical brushwork, keeping the original subjects, object count, poses, camera angle, crop, and background arrangement. Lighting finish only: {context}."
     },
     {
       "id": "anime",
+      "preview": "previews/anime.jpg",
       "label": "ANIME",
       "real": true,
       "liberal": true,
       "tint": [255, 120, 200],
-      "keywords": "anime cel shade, expressive eyes, clean linework, soft screen-tone, vibrant palette",
-      "prompt": "Restyle as anime illustration: cel shading, clean linework, expressive features, richer color. Same crop/framing — do not invent a new background scene — but you MAY more freely reinterpret materials, faces, lighting, and small atmospheric details. Mood: {context}."
+      "keywords": "hand-drawn anime film still, precise linework, shaped cel shadows, painted backgrounds",
+      "prompt": "Redraw the supplied photo as a polished hand-drawn anime film still. Use precise, varied linework, confident two- or three-tone cel shading, and carefully placed highlights that describe each material. Preserve individual likeness and expressions while translating faces into expressive anime features with restrained proportions. Give hair and fabric clear grouped shapes and retain the distinguishing details of objects. Render the existing background with softer painted edges and quieter detail so the main subjects read clearly. Use rich but balanced local colors, clean separation of light and shadow, and readable dark areas. Keep the original subjects, object count, poses, camera angle, crop, and background arrangement; all stylization belongs to the existing scene. Lighting finish only: {context}."
     },
     {
       "id": "surprise",
@@ -131,11 +120,48 @@
       "real": true,
       "liberal": true,
       "tint": [120, 220, 180],
-      "keywords": "unexpected style twist, mood-led grade, playful reinterpretation",
-      "prompt": "Surprise me: pick something random and fun — lead with mood, then whatever style/filter/grade twist you feel like. Same crop/framing — do not invent a new background scene — but you MAY more freely reinterpret materials, faces, lighting, color, and small atmospheric details. Mood: {context}."
+      "keywords": "randomized visual treatment, coherent palette, deliberate focal hierarchy",
+      "prompt": "Restyle the supplied photo with this already selected visual treatment: {variation}. Commit to that treatment across the entire image, expressing texture through its actual medium and using the selected palette as a coherent color relationship. Apply the focus choice through edge sharpness and detail distribution within the existing composition. For film treatments, retain photographic faces, materials, and optical depth; for handmade treatments, rebuild the same forms with the chosen marks or materials. Preserve individual likeness, expressions, and recognizable object shapes. Keep the original subjects, object count, poses, camera angle, crop, and background arrangement; fill the frame without added borders or decoration. The selected treatment and palette take priority over the lighting finish: {context}.",
+      "variations": {
+        "treatment": [
+          "35mm color-negative photograph with fine organic grain and smooth highlight roll-off",
+          "color slide-film photograph with luminous saturated colors and crisp tonal separation",
+          "instant-film photograph with creamy highlights and soft color transitions, filling the original frame",
+          "cross-processed color photograph with unusual shadow-to-highlight color separation",
+          "cinematic photograph with gentle halation around existing bright lights and textured midtones",
+          "layered cut-paper collage with overlapping paper shapes and small cast shadows",
+          "impasto oil painting with thick directional brushstrokes and ridges of paint",
+          "color woodblock print with carved contours, flat ink areas, and visible wood grain",
+          "soft pastel drawing with velvety color fields and broken chalk edges",
+          "stained-glass mosaic with translucent colored pieces and dark leading following existing forms"
+        ],
+        "palette": [
+          "amber highlights and teal shadows",
+          "rose highlights and indigo shadows",
+          "buttery yellow highlights and muted olive shadows",
+          "peach highlights and lavender shadows",
+          "ivory highlights and cobalt shadows with restrained vermilion accents",
+          "mint highlights and plum shadows"
+        ],
+        "focus": [
+          "concentrate fine detail on the main subject, with softly simplified background edges",
+          "keep foreground and background clearly defined with detail throughout",
+          "emphasize the existing foreground subject through crisp edges and stronger local contrast"
+        ]
+      }
+    },
+    {
+      "id": "pencil",
+      "preview": "previews/pencil.jpg",
+      "label": "PENCIL SKETCH",
+      "real": true,
+      "liberal": true,
+      "tint": [210, 170, 100],
+      "keywords": "full-color pencil drawing, directional strokes, layered color, visible paper tooth",
+      "prompt": "Redraw the supplied photo as an expressive full-color colored-pencil sketch on ivory drawing paper. Build forms with fine directional strokes that follow their surfaces, layered colored hatching, and changes in pencil pressure. Choose pencil colors from the source image and deepen shadows with complementary colored layers so they stay chromatic. Let paper tooth show between strokes, reserve bare paper for highlights, and use a few softly burnished passages for smooth surfaces. Concentrate precise marks around the main subjects and use broader, looser strokes in the existing background. Preserve individual likeness, expressions, and recognizable object shapes without tracing every edge equally. Keep the original subjects, object count, poses, camera angle, crop, and background arrangement. Lighting finish only: {context}."
     }
   ],
-  "prompt_system": "You write one short img2img EDIT prompt for Somnium.\n\nDefault balance:\n- Keep the SAME crop and recognizable subjects. Do not expand the frame or invent a new background scene.\n- Prefer style grade + subtle optical mood (grain, glare kiss, vignette, cool/warm tint, light haze).\n- At most a whisper of extra atmosphere — never dominant new props or scenery.\n- NEVER instruct adding readable text, logos, captions, watermarks, or place/event names.\n- Mention mood/weather lightly — optical only, not written words.\n\nIf the style draft says liberal stylization is allowed (e.g. anime, surprise), you may push the look harder: stronger stylization of faces/materials/lighting and a few small atmospheric flourishes — still same crop, no full scene rewrite, no text.\n\nOutput ONLY the edit prompt text.",
+  "prompt_system": "Write one image-edit prompt for Grok Imagine from the supplied draft. Refine its language without inventing creative content. Use roughly 100 to 160 words when needed to retain the medium-specific details; do not pad short drafts.\nLead with the transformation of the supplied photograph. Spend most of the prompt on the selected medium, mark-making, material rendering, color relationships, and focal hierarchy. Describe physical qualities directly rather than generic quality adjectives.\nPreserve the draft's distinctive treatment. For surprise, retain the already selected treatment, palette, and focus as one coherent result. Keep photographic treatments photographic and illustrated treatments faithful to their stated medium.\nYou cannot see the photograph. Refer to its existing subjects and surroundings without naming or imagining unseen objects. Preserve likeness, expressions, object count, poses, camera angle, crop, and background arrangement.\nThe lighting finish is secondary. Combine its cues into at most one short sentence about exposure, color temperature, shadow softness, or reflected light on existing surfaces. Keep the original light direction, source materials, and chosen palette. If a cue conflicts with the style or scene, soften or omit it.\nExpress lighting through the selected medium. Keep interiors as interiors and preserve the existing sky or ceiling as part of the same setting. All changes affect rendering of existing content; add no objects, scenery, symbols, decorative overlays, or lettering.\nRemove repeated instructions and negative keyword lists. Output only the finished edit prompt.",
   "models": {
     "prompt_provider": "openai_compat",
     "image_provider": "xai",

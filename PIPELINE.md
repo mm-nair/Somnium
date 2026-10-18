@@ -25,7 +25,7 @@ JPEG + style  (USB COOK from ESP)
 ESP → laptop:
 
 ```
-COOK style=<id> len=<n> lat=… lon=…
+COOK style=<style> len=<n> id=<request> crc=<crc32> lat=… lon=…
 <n jpeg bytes>
 COOK_END
 ```
@@ -33,9 +33,51 @@ COOK_END
 Laptop → ESP:
 
 ```
-DREAM <n>
+DREAM <request> <n> <crc32>
+```
+
+ESP replies after allocating its receive buffer:
+
+```
+READY DREAM <request>
+```
+
+Only then does the laptop send:
+
+```
 <n jpeg bytes>
 DREAM_END
+```
+
+Both binary payloads are followed by a newline, their end marker, and a
+newline. Request IDs and CRC32 values are eight hexadecimal digits. The CRC is
+the standard CRC32 used by Python `zlib.crc32` and ESP `esp_rom_crc32_le(0, …)`.
+The ESP verifies the length, trailer, CRC and JPEG markers before replying
+`ACK DREAM <request>`. Errors use `ERR <request> <reason>`.
+
+The bridge reports acceptance only after that ACK. A reset or disconnect
+aborts the current transfer; reconnecting never replays its binary payload.
+Flash firmware and restart the bridge together when updating this protocol.
+
+## Firmware JPEG decoding
+
+Use TJpg_Decoder throughout the display path with native RGB565 pixels.
+Do not combine its wrapper with the camera library's `jpg2rgb565`: both
+libraries export `jd_prepare` and `jd_decomp`, but their decoder structures
+and pixel formats differ. The firmware link-map regression checks that both
+symbols come from TJpg_Decoder.
+
+Review starts its display timer after the decoded image is drawn. Failed
+decoding shows `image unavailable` and logs the failure. Storage lists SD
+photos together with RAM fallback copies for failed or unavailable SD saves.
+New shot numbers skip existing pairs across reboots. The on-device SD index
+keeps the latest 64 files.
+
+Build and run the offline regressions:
+
+```sh
+nix develop -c pio run
+nix develop -c python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
 ## HTTP (laptop local)

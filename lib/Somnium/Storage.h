@@ -8,6 +8,7 @@ class Storage {
  public:
   static bool begin();
   static bool ready();
+  static int nextShotNumber(const char *styleId, int minimumShot);
   // Writes JPEG bytes (truncates/replaces existing file).
   static bool saveJpeg(const char *path, const uint8_t *data, size_t length);
 

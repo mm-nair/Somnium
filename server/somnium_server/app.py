@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -12,6 +13,13 @@ from somnium_server.pipeline import Pipeline
 cfg = load_config()
 pipeline = Pipeline(cfg)
 app = FastAPI(title="Somnium Server", version="0.2.0")
+logger = logging.getLogger("uvicorn.error")
+
+
+def header_preview(text: str, limit: int = 512) -> str:
+    text = text.encode("ascii", "replace").decode("ascii")
+    text = "".join(character if 32 <= ord(character) <= 126 else " " for character in text)
+    return " ".join(text.split())[:limit].strip()
 
 
 @app.get("/health")
@@ -53,14 +61,15 @@ async def process(
             force_real=force,
         )
     except Exception as err:  # noqa: BLE001 — edge client gets a clean error
+        logger.exception("Processing failed for style=%s", style)
         return JSONResponse({"error": str(err)}, status_code=502)
 
     headers = {
-        "X-Somnium-Style": result.style_id,
-        "X-Somnium-Prompt": result.prompt[:512],
-        "X-Somnium-Context": result.context.get("summary", "")[:256],
-        "X-Somnium-Orig": Path(result.meta.get("orig_path", "")).name,
-        "X-Somnium-Dream": Path(result.meta.get("dream_path", "")).name,
+        "X-Somnium-Style": header_preview(result.style_id),
+        "X-Somnium-Prompt": header_preview(result.prompt),
+        "X-Somnium-Context": header_preview(result.context.get("summary", ""), 256),
+        "X-Somnium-Orig": header_preview(Path(result.meta.get("orig_path", "")).name),
+        "X-Somnium-Dream": header_preview(Path(result.meta.get("dream_path", "")).name),
     }
     return Response(content=result.image, media_type="image/jpeg", headers=headers)
 

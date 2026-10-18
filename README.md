@@ -30,8 +30,9 @@ Before any model runs, the server builds a short mood summary from free data
 | Moon phase / illumination | Local Meeus-style math (`context_openmeteo.py`) |
 | Bright-sky hints (Venus, Orion, …) | Heuristic from season, hour, latitude |
 
-Those signals map to one subtle optical accent via `mood_artifacts` in
-`creative/creative.json`. Style grade leads; mood is a quiet accent.
+Weather and day/night map to two restrained lighting cues via `mood_artifacts`
+in `creative/creative.json`. They form one secondary lighting sentence in the
+edit prompt. Astronomy stays in metadata and does not enter the prompt.
 
 Toggle with `include_weather` / `include_sun` / `include_astro` in
 [`server/settings.json`](server/settings.json).
@@ -75,10 +76,15 @@ Preview the LCD UI on a laptop (no panel): `./scripts/ui_preview.sh`.
 nix develop
 cp .env.example .env   # put XAI_KEY=...
 
-./scripts/server.sh       # terminal A
-./scripts/usb_bridge.sh   # terminal B — keep running while shooting
-./scripts/flash.sh        # once (stop the bridge first if the port is busy)
+./scripts/flash.sh
+./scripts/server.sh
+./scripts/usb_bridge.sh
 ```
+
+Keep the server and bridge in separate terminals while shooting. Stop the
+bridge with Ctrl-C before flashing or pulling SD photos, then restart it.
+Firmware and bridge must use the same USB protocol version. The bridge waits
+for ESP acknowledgement before reporting a dream accepted.
 
 Full checklist: `./scripts/dev.sh`
 
@@ -90,6 +96,11 @@ Full checklist: `./scripts/dev.sh`
 | [`creative/logo.png`](creative/logo.png) | Boot logo source |
 | [`server/settings.json`](server/settings.json) | Host/port, venue lat/lon, API URLs, context flags |
 | [`.env`](.env.example) | Secrets (`XAI_KEY`) |
+
+The camera's left/right correction is `Defaults::kCameraMirrorHorizontal` in
+[`lib/Somnium/Config.h`](lib/Somnium/Config.h). It defaults to `true` and mirrors
+the landscape image before JPEG encoding. If the sensor orientation changes
+back, set it to `false`, rebuild, and reflash. The landscape framing stays the same.
 
 After editing creative JSON / logo:
 

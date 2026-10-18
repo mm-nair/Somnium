@@ -32,11 +32,11 @@ class OpenAICompatPromptProvider:
         )
         liberal = bool(style.get("liberal"))
         strength = (
-            "LIBERAL stylization allowed for this style: push anime/illustration "
-            "look harder (faces, materials, lighting, small atmosphere). "
+            "LIBERAL stylization allowed for this style: fully commit to the selected "
+            "medium and its treatment of existing faces and materials. "
             "Still same crop — no new background scene, no readable text."
             if liberal
-            else "Keep adjustments restrained; style grade + quiet mood accent."
+            else "Keep the source rendering and apply the specified finish."
         )
         temp = prompt_cfg.get("temperature", 0.45)
         if liberal:
@@ -51,11 +51,7 @@ class OpenAICompatPromptProvider:
                     "content": (
                         f"Style id: {style_id}\n"
                         f"Strength: {strength}\n"
-                        f"Draft to refine:\n{user}\n\n"
-                        f"Mood watermark: {context.get('mood_watermark', context.get('summary', ''))}\n"
-                        f"Subtle artifact accent: "
-                        f"{', '.join(context.get('artifacts') or [])}\n"
-                        f"Full context JSON:\n{json.dumps(context)}"
+                        f"Draft to refine:\n{user}"
                     ),
                 },
             ],

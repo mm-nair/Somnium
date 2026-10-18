@@ -15,15 +15,17 @@ class TemplatePromptProvider:
         template = style.get("prompt") or prompt_cfg.get("user_template") or (
             "{style_label}: {style_keywords}. Context: {context_summary}"
         )
+        lighting_finish = "; ".join(context.get("artifacts") or []) or "retain the existing lighting"
         return template.format(
             style_id=style_id,
             style_label=style.get("label", style_id),
             style_keywords=style.get("keywords", ""),
-            context_summary=context.get("summary", ""),
-            context=context.get("summary", ""),
+            context_summary=lighting_finish,
+            context=lighting_finish,
             taken_at=context.get("taken_at", ""),
             location_label=context.get("location_label", ""),
             prompt=style.get("prompt", ""),
+            variation=". ".join((context.get("variation") or {}).values()),
         ).strip()
 
 

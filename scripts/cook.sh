@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Camera-free cook: test photo + style + timestamp through xAI pipeline.
+# Camera-free cook: folder/file + style + timestamp → proc_output/{name}_dream.jpg
+#   ./scripts/cook.sh process --style anime
+#   ./scripts/cook.sh process/nyc.png --style anime
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"

@@ -9,8 +9,6 @@
 namespace Somnium {
 namespace Ui {
 
-// Draws into a RAM/PSRAM backbuffer, then blits once to the LCD so the user
-// never sees a progressive black fillScreen "wipe" over SPI.
 class Canvas {
  public:
   void bind(Adafruit_SPITFT *tft, int16_t width, int16_t height);
@@ -50,12 +48,14 @@ class Canvas {
   Adafruit_GFX *fb_ = nullptr;
   Adafruit_GFX *gfx_ = nullptr;
   uint16_t *fbPixels_ = nullptr;
+  uint16_t *presentedPixels_ = nullptr;
   int16_t width_ = 0;
   int16_t height_ = 0;
   int16_t originX_ = 0;
   int16_t originY_ = 0;
   Rect clip_{};
   bool frameOpen_ = false;
+  bool presentedFrameValid_ = false;
 };
 
 }  // namespace Ui
