@@ -5,15 +5,17 @@
 namespace Somnium {
 namespace Pins {
 
-constexpr int kDisplaySck = 21;
-constexpr int kDisplayMosi = 47;
+// LCD pins match Hackathon_Prep camera_dual (verified working on this hardware).
+constexpr int kDisplaySck = 1;
+constexpr int kDisplayMosi = 2;
 constexpr int kDisplayDc = 14;
-constexpr int kDisplayCs = 41;
-constexpr int kDisplayRst = 48;
+constexpr int kDisplayCs = 21;
+constexpr int kDisplayRst = 47;
 
-constexpr int kEncoderClk = 1;
-constexpr int kEncoderDt = 2;
-constexpr int kEncoderSw = 42;
+// Encoder pins match Hackathon_Prep controls firmware.
+constexpr int kEncoderClk = 42;
+constexpr int kEncoderDt = 41;
+constexpr int kEncoderSw = 0;
 constexpr int kShutterButton = 3;
 
 constexpr int kCamD0 = 11;

@@ -17,14 +17,13 @@ nix develop
 # typical loop:
 cp include/wifi_credentials.example.h include/wifi_credentials.h
 cp include/server_config.example.h include/server_config.h
-cp server/config.example.yaml server/config.yaml
-# edit the three files (SSID, laptop IP, prompts/models)
+# edit wifi + laptop IP; edit creative/creative.json for modes/prompts
 
 ./scripts/server.sh       # terminal A — note the IP
 ./scripts/flash.sh        # terminal B
 ```
 
-Encoder cycles style; shutter captures → uploads → LCD + SD.
+UI: boot splash → mode carousel (dial) → shutter → processing → result. Date/time in the header/footer.
 
 **Local-only (no server):** `#define SOMNIUM_USE_SERVER 0` in `include/server_config.h`, re-flash. See [PIPELINE.md](PIPELINE.md).
 
@@ -32,21 +31,24 @@ Encoder cycles style; shutter captures → uploads → LCD + SD.
 
 | File | Purpose |
 | --- | --- |
+| `creative/creative.json` | Modes, prompts, theme notes, model provider names |
+| `server/settings.json` | Host/port, venue lat/lon, API endpoints |
 | `include/wifi_credentials.h` | Hotspot SSID/password |
 | `include/server_config.h` | Laptop IP + `SOMNIUM_USE_SERVER` |
-| `server/config.yaml` | Styles, prompt text, model providers |
+| `lib/SomniumApp/Modes.h` | Camera-side mode ids/labels (keep in sync with JSON) |
 
-Swap models in YAML only (`prompt.provider`, `image.provider`). Default image provider is `echo` (returns the same photo) so the pipe works before you wire Grok/Nano Banana/etc.
+Font swap: `lib/SomniumApp/Brand.h` (`FreeSerifBoldItalic12pt7b`). Logo: `assets/somnium_logo.png`.
 
 ## Layout
 
 ```
 lib/Somnium/       hardware + ApiClient + Storage + TimeSync
-lib/SomniumUi/     page UI toolkit (screens later)
-server/            FastAPI brain (config-driven providers)
+lib/SomniumUi/     page / canvas / tween toolkit
+lib/SomniumApp/    Somnium screens (boot, carousel, process, result)
+creative/          creative.json — edit prompts & modes here
+server/            FastAPI brain
 scripts/           flash.sh, server.sh, dev.sh
 tests/             serial hardware checks
-PIPELINE.md        HTTP contract + how to revert/swap
 ```
 
 ## Hardware tests
@@ -60,4 +62,6 @@ python tests/capture_photo.py -o shot.jpg
 
 | LCD | Encoder | Shutter |
 | --- | --- | --- |
-| SCK 21, MOSI 47, DC 14, CS 41, RST 48 | CLK 1, DT 2, SW 42 | GPIO 3 |
+| SCK 1, MOSI 2, CS 21, DC 14, RST 47 | CLK 42, DT 41, SW 0 (BOOT) | GPIO 3 |
+
+Same pin map as the working Hackathon_Prep `camera_dual` / `controls` sketches. Keep the knob released during reset/flash (GPIO 0 = BOOT). On boot the LCD should flash red→green→blue→black; solid white means the panel isn’t getting SPI.

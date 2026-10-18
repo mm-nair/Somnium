@@ -10,7 +10,7 @@ uint8_t Inputs::sPrevEncoderState = 0;
 int Inputs::sEncoderTransitions = 0;
 long Inputs::sEncoderPosition = 0;
 int8_t Inputs::sLastEncoderDelta = 0;
-bool Inputs::sEncoderTurnEvent = false;
+int8_t Inputs::sPendingEncoderDelta = 0;
 
 void Inputs::initButton(Button &button, uint8_t pin) {
   button.pin = pin;
@@ -42,6 +42,8 @@ void Inputs::updateButton(Button &button) {
 }
 
 void Inputs::updateEncoder() {
+  // KY-040 detents are a full 4-step gray-code cycle. Firing every 2 steps
+  // made one physical click advance the carousel twice.
   constexpr int8_t kDirections[16] = {0,  -1, 1, 0, 1, 0, 0,  -1,
                                       -1, 0,  0, 1, 0, 1, -1, 0};
   const uint8_t state =
@@ -49,17 +51,21 @@ void Inputs::updateEncoder() {
   if (state == sPrevEncoderState) {
     return;
   }
+  int8_t step = 0;
   if ((state ^ sPrevEncoderState) == 3) {
     sEncoderTransitions = 0;
   } else {
-    sEncoderTransitions += kDirections[(sPrevEncoderState << 2) | state];
+    step = kDirections[(sPrevEncoderState << 2) | state];
+    sEncoderTransitions += step;
   }
   sPrevEncoderState = state;
+
   if (sEncoderTransitions >= 4 || sEncoderTransitions <= -4) {
-    sLastEncoderDelta = sEncoderTransitions > 0 ? 1 : -1;
-    sEncoderPosition += sLastEncoderDelta;
+    const int8_t dir = sEncoderTransitions > 0 ? 1 : -1;
+    sEncoderPosition += dir;
+    sPendingEncoderDelta =
+        static_cast<int8_t>(sPendingEncoderDelta + dir);
     sEncoderTransitions = 0;
-    sEncoderTurnEvent = true;
   }
 }
 
@@ -71,7 +77,7 @@ void Inputs::begin() {
   sEncoderTransitions = 0;
   sEncoderPosition = 0;
   sLastEncoderDelta = 0;
-  sEncoderTurnEvent = false;
+  sPendingEncoderDelta = 0;
   initButton(sShutter, Pins::kShutterButton);
   initButton(sEncoderSw, Pins::kEncoderSw);
 }
@@ -107,8 +113,10 @@ InputEvent Inputs::pollEvent() {
     sEncoderSw.releaseEvent = false;
     return InputEvent::EncoderReleased;
   }
-  if (sEncoderTurnEvent) {
-    sEncoderTurnEvent = false;
+  if (sPendingEncoderDelta != 0) {
+    sLastEncoderDelta = sPendingEncoderDelta > 0 ? 1 : -1;
+    sPendingEncoderDelta =
+        static_cast<int8_t>(sPendingEncoderDelta - sLastEncoderDelta);
     return InputEvent::EncoderTurned;
   }
   return InputEvent::None;

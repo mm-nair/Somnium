@@ -1,0 +1,23 @@
+{
+  "host": "0.0.0.0",
+  "port": 8080,
+  "output_dir": "outputs",
+  "venue": {
+    "lat": 47.6553,
+    "lon": -122.3035,
+    "label": "DubHacks 2026"
+  },
+  "prompt_api": {
+    "base_url": "https://api.openai.com/v1",
+    "model": "gpt-4o-mini",
+    "api_key_env": "SOMNIUM_PROMPT_API_KEY"
+  },
+  "image_api": {
+    "endpoint": "",
+    "api_key_env": "SOMNIUM_IMAGE_API_KEY",
+    "body_mode": "json",
+    "image_field": "image",
+    "prompt_field": "prompt",
+    "extra": {}
+  }
+}

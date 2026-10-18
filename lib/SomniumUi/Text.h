@@ -7,10 +7,19 @@ namespace Somnium {
 namespace Ui {
 
 struct TextStyle {
-  Color color = Color::rgb565(255, 255, 255);
-  uint8_t size = 1;
-  Align align = Align::Left;
-  VAlign valign = VAlign::Top;
+  Color color;
+  uint8_t size;
+  Align align;
+  VAlign valign;
+
+  TextStyle()
+      : color(Color::rgb565(255, 255, 255)),
+        size(1),
+        align(Align::Left),
+        valign(VAlign::Top) {}
+  TextStyle(Color c, uint8_t s, Align a = Align::Left,
+            VAlign v = VAlign::Top)
+      : color(c), size(s), align(a), valign(v) {}
 };
 
 struct Text {

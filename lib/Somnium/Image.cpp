@@ -7,11 +7,18 @@
 namespace Somnium {
 namespace {
 
-bool jpegDrawToken(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t *bitmap) {
-  if (!Display::ready() || Display::tft() == nullptr) {
-    return false;
+Adafruit_GFX *gJpegTarget = nullptr;
+
+bool jpegDrawToken(int16_t x, int16_t y, uint16_t w, uint16_t h,
+                   uint16_t *bitmap) {
+  Adafruit_GFX *gfx = gJpegTarget;
+  if (gfx == nullptr) {
+    if (!Display::ready() || Display::tft() == nullptr) {
+      return false;
+    }
+    gfx = Display::tft();
   }
-  Display::tft()->drawRGBBitmap(x, y, bitmap, w, h);
+  gfx->drawRGBBitmap(x, y, bitmap, w, h);
   return true;
 }
 
@@ -28,14 +35,20 @@ bool Image::looksLikeJpeg(const uint8_t *data, size_t length) {
          data[length - 2] == 0xFF && data[length - 1] == 0xD9;
 }
 
-bool Image::drawJpeg(const uint8_t *data, size_t length) {
-  if (!looksLikeJpeg(data, length) || !Display::ready()) {
+bool Image::drawJpeg(const uint8_t *data, size_t length, Adafruit_GFX *target) {
+  if (!looksLikeJpeg(data, length)) {
     return false;
   }
+  if (target == nullptr && !Display::ready()) {
+    return false;
+  }
+  gJpegTarget = target;
   TJpgDec.setJpgScale(1);
   TJpgDec.setSwapBytes(true);
   TJpgDec.setCallback(jpegDrawToken);
-  return TJpgDec.drawJpg(0, 0, data, length) == JDR_OK;
+  const bool ok = TJpgDec.drawJpg(0, 0, data, length) == JDR_OK;
+  gJpegTarget = nullptr;
+  return ok;
 }
 
 }  // namespace Somnium

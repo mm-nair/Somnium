@@ -25,10 +25,19 @@ bool Display::begin() {
                               Pins::kDisplayRst);
   gTft->begin(Defaults::kDisplaySpiHz);
   gTft->setRotation(1);
-  gTft->fillScreen(0x0000);
+  // Boot color bars — if you still see solid white, SPI/wiring is wrong.
+  gTft->fillScreen(0xF800);  // red
+  delay(200);
+  gTft->fillScreen(0x07E0);  // green
+  delay(200);
+  gTft->fillScreen(0x001F);  // blue
+  delay(200);
+  gTft->fillScreen(0x0000);  // black
   gReady = true;
   Camera::setFrameCallback(onCameraFrame);
-  Console::println("LCD ready");
+  Console::printf("LCD ready SCK=%d MOSI=%d CS=%d DC=%d RST=%d\n",
+                  Pins::kDisplaySck, Pins::kDisplayMosi, Pins::kDisplayCs,
+                  Pins::kDisplayDc, Pins::kDisplayRst);
   return true;
 }
 

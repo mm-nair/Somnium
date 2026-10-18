@@ -57,11 +57,16 @@ class Pipeline:
             context=context,
             prompt_cfg=self.cfg.get("prompt") or {},
         )
-        result_image = self.stack["image"].transform(
-            image=image,
-            prompt=prompt,
-            image_cfg=self.cfg.get("image") or {},
-        )
+        # Modes with real=false (default) just echo the capture — no model call.
+        if style.get("real"):
+            result_image = self.stack["image"].transform(
+                image=image,
+                prompt=prompt,
+                image_cfg=self.cfg.get("image") or {},
+            )
+        else:
+            result_image = image
+            prompt = f"[placeholder/{style_id}] {prompt}"
 
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         stem = self.output_dir / f"{stamp}_{style_id}"

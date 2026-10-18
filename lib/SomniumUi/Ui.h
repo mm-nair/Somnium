@@ -18,11 +18,11 @@ class Ui {
   static Navigator &navigator();
   static Theme &theme();
 
-  static bool push(Page *page, Transition transition = Transition::FadeThrough,
+  static bool push(Page *page, Transition transition = Transition::None,
                    uint16_t durationMs = 0);
-  static bool replace(Page *page, Transition transition = Transition::FadeThrough,
+  static bool replace(Page *page, Transition transition = Transition::None,
                       uint16_t durationMs = 0);
-  static bool pop(Transition transition = Transition::FadeThrough,
+  static bool pop(Transition transition = Transition::None,
                   uint16_t durationMs = 0);
   static bool handleAction(NavAction action);
 

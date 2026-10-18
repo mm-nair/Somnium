@@ -3,10 +3,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT/server"
 
-if [[ ! -f config.yaml ]]; then
-  cp config.example.yaml config.yaml
-  echo "Created server/config.yaml from example — edit prompts/models there."
-fi
+# Creative prompts/modes: ../creative/creative.json
+# Server plumbing: ./settings.json
 
 export PYTHONPATH="$ROOT/server${PYTHONPATH:+:$PYTHONPATH}"
 

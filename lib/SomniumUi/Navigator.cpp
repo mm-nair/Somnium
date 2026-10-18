@@ -136,54 +136,37 @@ void Navigator::drawTransition() {
   canvas_->resetClip();
 
   switch (transition_.type) {
-    case Transition::FadeThrough: {
-      if (t < 0.5f) {
-        if (from != nullptr) {
-          from->draw(*canvas_);
-        }
-        const float cover = t * 2.0f;
-        const int16_t h = Easing::lerpI(0, canvas_->height(), cover);
-        canvas_->fillRect({0, 0, canvas_->width(), h}, bg);
-      } else {
-        if (to != nullptr) {
-          to->draw(*canvas_);
-        }
-        const float cover = (1.0f - t) * 2.0f;
-        const int16_t h = Easing::lerpI(0, canvas_->height(), cover);
-        canvas_->fillRect(
-            {0, static_cast<int16_t>(canvas_->height() - h), canvas_->width(), h},
-            bg);
-      }
-      break;
-    }
     case Transition::SlideLeft:
     case Transition::SlideRight: {
       const int16_t w = canvas_->width();
       const int dir = transition_.type == Transition::SlideLeft ? -1 : 1;
       const int16_t fromX = Easing::lerpI(0, static_cast<int16_t>(dir * w), t);
-      const int16_t toX =
-          Easing::lerpI(static_cast<int16_t>(-dir * w), 0, t);
+      const int16_t toX = Easing::lerpI(static_cast<int16_t>(-dir * w), 0, t);
       canvas_->fillScreen(bg);
       if (from != nullptr) {
         canvas_->setOrigin(fromX, 0);
-        canvas_->setClip(Rect::intersect(canvas_->bounds(), {fromX, 0, w, canvas_->height()}));
+        canvas_->setClip(Rect::intersect(
+            canvas_->bounds(), Rect(fromX, 0, w, canvas_->height())));
         from->draw(*canvas_);
       }
       if (to != nullptr) {
         canvas_->setOrigin(toX, 0);
-        canvas_->setClip(Rect::intersect(
-            {0, 0, w, canvas_->height()},
-            {toX, 0, w, canvas_->height()}));
+        canvas_->setClip(Rect::intersect(Rect(0, 0, w, canvas_->height()),
+                                         Rect(toX, 0, w, canvas_->height())));
         to->draw(*canvas_);
       }
       canvas_->resetOrigin();
       canvas_->resetClip();
       break;
     }
+    case Transition::FadeThrough:
     case Transition::None:
     default:
+      // No black wipe — present the destination page in one buffered frame.
       if (to != nullptr) {
         to->draw(*canvas_);
+      } else if (from != nullptr) {
+        from->draw(*canvas_);
       }
       break;
   }
@@ -195,19 +178,19 @@ void Navigator::draw() {
   }
   needsDraw_ = false;
 
+  canvas_->beginFrame();
   if (transition_.progress.active) {
     drawTransition();
-    return;
+  } else {
+    Page *page = current();
+    if (page != nullptr) {
+      canvas_->resetOrigin();
+      canvas_->resetClip();
+      page->draw(*canvas_);
+      page->consumeDirty();
+    }
   }
-
-  Page *page = current();
-  if (page == nullptr) {
-    return;
-  }
-  canvas_->resetOrigin();
-  canvas_->resetClip();
-  page->draw(*canvas_);
-  page->consumeDirty();
+  canvas_->endFrame();
 }
 
 }  // namespace Ui

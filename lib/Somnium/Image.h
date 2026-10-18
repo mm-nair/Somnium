@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Adafruit_GFX.h>
 #include <Arduino.h>
 
 #include "Camera.h"
@@ -13,8 +14,9 @@ class Image {
                         int jpegQuality = Defaults::kJpegQuality);
   static void freePhoto(JpegBuffer &buffer);
   static bool looksLikeJpeg(const uint8_t *data, size_t length);
-  // Decode JPEG onto the LCD (returned server images).
-  static bool drawJpeg(const uint8_t *data, size_t length);
+  // Draw onto target (backbuffer) or the LCD if target is null.
+  static bool drawJpeg(const uint8_t *data, size_t length,
+                       Adafruit_GFX *target = nullptr);
 };
 
 }  // namespace Somnium

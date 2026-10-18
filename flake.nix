@@ -20,6 +20,7 @@
             pythonPackages: with pythonPackages; [
               pyserial
               pillow
+              pygame
               fastapi
               uvicorn
               pyyaml

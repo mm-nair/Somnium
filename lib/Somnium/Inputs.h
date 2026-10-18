@@ -44,7 +44,7 @@ class Inputs {
   static int sEncoderTransitions;
   static long sEncoderPosition;
   static int8_t sLastEncoderDelta;
-  static bool sEncoderTurnEvent;
+  static int8_t sPendingEncoderDelta;
 };
 
 }  // namespace Somnium

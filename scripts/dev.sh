@@ -1,40 +1,42 @@
 #!/usr/bin/env bash
-# One-pager: print the usual bring-up commands.
 set -euo pipefail
 cat <<'EOF'
-Somnium bring-up (laptop hotspot + ESP32 edge client)
-=====================================================
+Somnium bring-up
+================
 
-0) Enter shell
-   nix develop
+0) nix develop
 
 1) One-time config
    cp include/wifi_credentials.example.h include/wifi_credentials.h
    cp include/server_config.example.h include/server_config.h
-   cp server/config.example.yaml server/config.yaml
-   # edit wifi_credentials.h  → hotspot SSID/pass
-   # edit server_config.h     → laptop IP on hotspot (see step 2)
-   # edit server/config.yaml  → prompts + model providers
+   # wifi_credentials.h  → hotspot SSID/pass (2.4 GHz)
+   # server_config.h      → SOMNIUM_USE_SERVER 1 + laptop hotspot IP
+   # creative/creative.json → modes/prompts; set "real": true to hit a model
 
-2) Run server (terminal A)
+2) Wi-Fi + server test (two terminals)
+   # A — laptop on the hotspot
    ./scripts/server.sh
-   # note printed IP → put in include/server_config.h as kServerHost
-   curl -s http://127.0.0.1:8080/health | jq .
+   # note printed IP, put in include/server_config.h as SOMNIUM_SERVER_HOST, re-flash if changed
+   curl -s http://127.0.0.1:8080/health
 
-3) Flash camera (terminal B)
+   # B — camera
    ./scripts/flash.sh
-   # or: ./scripts/flash.sh /dev/ttyACM0
+   # Join same hotspot. Boot UI → pick mode → shutter.
+   # With "real": false (default), server returns the same photo (placeholder).
 
-4) Shoot
-   Turn encoder to change style; press shutter.
-   Echo image provider returns the same JPEG (pipeline test).
-   Swap image.provider / prompt.provider in server/config.yaml when ready.
+3) UI-only / offline
+   #define SOMNIUM_USE_SERVER 0  in server_config.h, re-flash
+   # Shutter still shows local capture path without HTTP.
 
-Revert to local-only (no Python server)
-   In include/server_config.h set:  #define SOMNIUM_USE_SERVER 0
-   Re-flash. Server/ folder can be ignored.
+4) UI preview on the ThinkPad (no LCD needed)
+   ./scripts/ui_preview.sh
+   # Sidebar: Boot, Modes, Process, Review, Storage…
+   # Click a row, or 1–9 / [ ] / Tab. Modes/Storage: ←/→
+   # Review auto-returns to Modes (~2.2s), like a camera glance.
+   ./scripts/ui_preview.sh --screen storage
+   ./scripts/ui_preview.sh --export /tmp/somnium-ui
 
-Hardware tests (no server)
+Hardware USB tests
    python tests/monitor_inputs.py
    python tests/capture_photo.py -o shot.jpg
 EOF

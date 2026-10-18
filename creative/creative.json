@@ -1,0 +1,56 @@
+{
+  "brand": {
+    "name": "Somnium",
+    "tagline": "kitchen magic cam"
+  },
+  "theme": {
+    "bg": [0, 0, 0],
+    "pink": [255, 105, 180],
+    "pinkDim": [200, 80, 140],
+    "muted": [140, 110, 125],
+    "surface": [20, 12, 18],
+    "panel": [36, 20, 30]
+  },
+  "modes": [
+    {
+      "id": "noir",
+      "label": "NOIR",
+      "real": false,
+      "keywords": "high-contrast black and white film noir, deep shadows, silver gelatin",
+      "prompt": "Restyle as moody film noir. High contrast B&W, Venetian blinds light, cigarette-smoke atmosphere. Keep the subject's pose. Context: {context}."
+    },
+    {
+      "id": "cartoon",
+      "label": "CARTOON",
+      "real": false,
+      "keywords": "bold outlines, flat pastel colors, playful cartoon cel shading",
+      "prompt": "Restyle as a charming cartoon illustration with bold outlines and flat colors, kitchen-storybook warmth. Keep composition. Context: {context}."
+    },
+    {
+      "id": "cyberpunk",
+      "label": "CYBER",
+      "real": false,
+      "keywords": "neon magenta and cyan, wet streets, chrome, futuristic night market",
+      "prompt": "Restyle as neon cyberpunk night scene, magenta/cyan glow, reflective wet surfaces. Keep composition. Context: {context}."
+    },
+    {
+      "id": "watercolor",
+      "label": "WASH",
+      "real": false,
+      "keywords": "soft watercolor blooms, paper tooth, gentle pigment granulation",
+      "prompt": "Restyle as soft watercolor on cold-press paper, gentle blooms and pastel washes. Keep composition. Context: {context}."
+    },
+    {
+      "id": "gourmet",
+      "label": "GOURMET",
+      "real": false,
+      "keywords": "food-magazine lighting, rich color grade, culinary editorial",
+      "prompt": "Restyle like a gourmet food-magazine editorial with appetizing warm light and rich color. Kitchen DubHacks vibes. Keep composition. Context: {context}."
+    }
+  ],
+  "prompt_system": "You write one short img2img prompt for Somnium, a reality-bending camera. Output only the prompt.",
+  "models": {
+    "prompt_provider": "template",
+    "image_provider": "echo"
+  }
+}

@@ -19,6 +19,7 @@ bool Ui::begin() {
   }
   canvas_.bind(Display::tft(), static_cast<int16_t>(Display::width()),
                static_cast<int16_t>(Display::height()));
+  // Drawing goes to a PSRAM backbuffer; Navigator flushes once per frame.
   navigator_.begin(&canvas_, &theme_);
   ready_ = true;
   return true;

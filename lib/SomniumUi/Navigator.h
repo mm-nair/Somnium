@@ -21,12 +21,11 @@ class Navigator {
 
   void begin(Canvas *canvas, const Theme *theme);
 
-  bool push(Page *page, Transition transition = Transition::FadeThrough,
+  bool push(Page *page, Transition transition = Transition::None,
             uint16_t durationMs = 0);
-  bool replace(Page *page, Transition transition = Transition::FadeThrough,
+  bool replace(Page *page, Transition transition = Transition::None,
                uint16_t durationMs = 0);
-  bool pop(Transition transition = Transition::FadeThrough,
-           uint16_t durationMs = 0);
+  bool pop(Transition transition = Transition::None, uint16_t durationMs = 0);
 
   Page *current() const;
   uint8_t depth() const { return depth_; }
