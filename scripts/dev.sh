@@ -16,6 +16,11 @@ Somnium bring-up (USB cook)
    Modes → shutter → Process ("usb → thinkpad…") → Review · dream (~20s+)
    dial-click → Storage → spin dial → STYLE·raw / STYLE·mod
 
+2b) Save SD demos to ThinkPad (stop bridge first)
+   pkill -f usb_bridge.py
+   ./scripts/usb_pull_sd.sh            # → demos/sd_<timestamp>/
+   ./scripts/usb_bridge.sh
+
 3) Controls
    shutter     = always take a picture
    dial turn   = carousel (Modes) or browse plates (Storage)

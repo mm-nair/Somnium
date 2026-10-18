@@ -6,7 +6,8 @@ namespace Somnium {
 namespace App {
 
 struct Chrono {
-  // Fills buf with local-ish display time. Uses UTC if NTP ready, else uptime clock.
+  // Uses wall clock if Host received TIME <unix> from the USB bridge.
+  static bool synced();
   static void formatDateTime(char *buf, size_t len);
   static void formatDate(char *buf, size_t len);
   static void formatTime(char *buf, size_t len);

@@ -5,6 +5,10 @@
 namespace Somnium {
 
 void Console::begin(uint32_t baud) {
+  // DREAM JPEGs are ~10–40 KB; default 256 B RX overflows while the Process
+  // page SPI-blits, so Host::cook hangs in readExact forever.
+  Serial.setRxBufferSize(64 * 1024);
+  Serial.setTxBufferSize(4 * 1024);
   Serial.begin(baud);
   delay(500);
 }

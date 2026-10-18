@@ -276,6 +276,8 @@ void requestCapture() {
 }
 
 void runPipeline() {
+  Somnium::Host::setPump(pumpCookUi);
+
   if (!gCameraOk) {
     failProcess("no camera — dial back");
     return;
@@ -289,11 +291,13 @@ void runPipeline() {
     return;
   }
 
+  // Capture can briefly touch the display path — restore Process chrome.
   gProcess.setStatus("usb → thinkpad…");
   pumpCookUi();
+  pumpCookUi();
+
   Somnium::JpegBuffer dream{};
   String bridgeErr;
-  // Mood clock comes from the laptop; venue is baked into firmware defaults.
   if (!Somnium::Host::cook(photo.data, photo.length, gMode.selected().id,
                            nullptr, Somnium::Defaults::kVenueLat,
                            Somnium::Defaults::kVenueLon, dream, &bridgeErr)) {
@@ -422,7 +426,7 @@ void Runtime::tick() {
   }
 
   if (gScreen == Screen::Review) {
-    if (gPreview.backRequested()) {
+    if (gPreview.autoDone() || gPreview.backRequested()) {
       gPreview.clearBack();
       freeResult();
       showMode();

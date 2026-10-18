@@ -34,7 +34,9 @@ bool Display::begin() {
   delay(200);
   gTft->fillScreen(0x0000);  // black
   gReady = true;
-  Camera::setFrameCallback(onCameraFrame);
+  // Do NOT blit camera frames to the TFT — that flashes the raw capture over
+  // the Process UI. Capture stays in RAM for USB cook only.
+  Camera::setFrameCallback(nullptr);
   Console::printf("LCD ready SCK=%d MOSI=%d CS=%d DC=%d RST=%d\n",
                   Pins::kDisplaySck, Pins::kDisplayMosi, Pins::kDisplayCs,
                   Pins::kDisplayDc, Pins::kDisplayRst);

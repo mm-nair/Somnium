@@ -27,6 +27,11 @@ except ImportError as exc:  # pragma: no cover
     raise SystemExit("pyserial required") from exc
 
 
+def send_time(ser: "serial.Serial") -> None:
+    ser.write(f"TIME {int(time.time())}\n".encode())
+    ser.flush()
+
+
 def post_process(
     jpeg: bytes,
     *,
@@ -37,6 +42,8 @@ def post_process(
     url: str,
     timeout: float,
 ) -> bytes:
+    from datetime import datetime, timezone
+
     boundary = "----SomniumBridgeBoundary"
     parts: list[bytes] = []
 
@@ -50,8 +57,9 @@ def post_process(
         )
 
     field("style", style)
-    if taken_at:
-        field("taken_at", taken_at)
+    if not taken_at:
+        taken_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    field("taken_at", taken_at)
     if lat:
         field("lat", lat)
     if lon:
@@ -141,9 +149,14 @@ def main() -> int:
     print(f"usb_bridge on {port} → {args.url}", flush=True)
     print("Leave this running while shooting (USB cook).", flush=True)
     print("Tip: don't hold the dial (BOOT) — that drops serial into download mode.", flush=True)
+    send_time(ser)
+    next_time = time.monotonic() + 30.0
 
     while True:
         try:
+            if time.monotonic() >= next_time:
+                send_time(ser)
+                next_time = time.monotonic() + 30.0
             line = ser.readline()
             if not line:
                 continue
@@ -151,6 +164,9 @@ def main() -> int:
             if not text.startswith("COOK "):
                 if text:
                     print(f"| {text}", flush=True)
+                    if "READY" in text:
+                        send_time(ser)
+                        next_time = time.monotonic() + 30.0
                 continue
             meta = parse_cook_header(text)
             n = int(meta["len"])
@@ -171,11 +187,16 @@ def main() -> int:
                 url=args.url,
                 timeout=args.timeout,
             )
+            # Header first + short pause so ESP can leave UI-pump before binary.
+            send_time(ser)
             ser.write(f"DREAM {len(dream)}\n".encode())
+            ser.flush()
+            time.sleep(0.05)
             ser.write(dream)
             ser.write(b"\nDREAM_END\n")
             ser.flush()
             print(f"DREAM {len(dream)} B sent", flush=True)
+            next_time = time.monotonic() + 30.0
         except serial.SerialException as exc:
             print(f"serial lost ({exc}) — reconnecting…", flush=True)
             try:
@@ -186,6 +207,8 @@ def main() -> int:
                 time.sleep(1.0)
                 try:
                     ser = open_serial()
+                    send_time(ser)
+                    next_time = time.monotonic() + 30.0
                     print(f"reconnected {port}", flush=True)
                     break
                 except Exception as reopen_exc:  # noqa: BLE001

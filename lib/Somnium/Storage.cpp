@@ -90,9 +90,10 @@ bool Storage::begin() {
   }
   gReady = true;
   SD_MMC.mkdir("/somnium");
-  // Fresh session: drop any leftover/corrupt JPEGs from prior runs.
-  clearGallery();
-  Console::println("SD ready (gallery wiped)");
+  // Keep plates across reboot/flash — pull demos with ./scripts/usb_pull_sd.sh.
+  // Wipe on demand: serial `sdwipe`.
+  clearList();
+  Console::printf("SD ready (%d jpg)\n", photoCount());
   return true;
 }
 

@@ -71,7 +71,7 @@ class ProcessPage : public Somnium::Ui::Page {
 };
 
 // Shared full-screen photo view:
-//   Review  — post-shot dream; dial-click returns to Modes (no auto-timeout)
+//   Review  — post-shot dream; auto-returns to Modes after a short glance
 //   Storage — browse saved plates with dial; footer shows i/len(photos)
 class PreviewPage : public Somnium::Ui::Page {
  public:
@@ -94,6 +94,7 @@ class PreviewPage : public Somnium::Ui::Page {
   int storageIndex() const { return index_ - 1; }  // 0-based
   bool backRequested() const { return back_; }
   void clearBack() { back_ = false; }
+  bool autoDone() const { return autoDone_; }
 
  private:
   void drawChrome(Somnium::Ui::Canvas &c);
@@ -105,12 +106,14 @@ class PreviewPage : public Somnium::Ui::Page {
   int index_ = 1;  // 1-based for display
   int total_ = 0;
   bool back_ = false;
+  bool autoDone_ = false;
   const uint8_t *jpeg_ = nullptr;
   size_t jpegLen_ = 0;
   uint16_t *rgb_ = nullptr;
   int16_t rgbW_ = 0;
   int16_t rgbH_ = 0;
   bool rgbOk_ = false;
+  uint32_t elapsed_ = 0;
   uint32_t clockMs_ = 0;
 };
 

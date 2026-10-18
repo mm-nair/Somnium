@@ -8,7 +8,10 @@ namespace Somnium {
 
 class Host {
  public:
+  using PumpFn = void (*)();
+
   static void poll();
+  static void setPump(PumpFn fn);
 
   // Cook via USB serial bridge (Python on ThinkPad → local /v1/process).
   // On success, outDream owns a heap/PSRAM buffer (caller frees).

@@ -23,6 +23,7 @@ using Somnium::Ui::Text;
 using Somnium::Ui::TextStyle;
 
 constexpr uint32_t kBootMs = 9000;
+constexpr uint32_t kReviewMs = 3000;
 
 Somnium::Ui::Theme &T() { return Somnium::Ui::Ui::theme(); }
 
@@ -305,6 +306,8 @@ void PreviewPage::beginReview(const char *modeLabel, const uint8_t *jpeg,
   index_ = 0;
   total_ = 0;
   back_ = false;
+  autoDone_ = false;
+  elapsed_ = 0;
   setPhoto(jpeg, length);
 }
 
@@ -313,6 +316,7 @@ void PreviewPage::beginStorage(int index0, int total) {
   index_ = total > 0 ? index0 + 1 : 0;
   total_ = total;
   back_ = false;
+  autoDone_ = false;
 }
 
 void PreviewPage::setPhoto(const uint8_t *jpeg, size_t length) {
@@ -331,6 +335,8 @@ void PreviewPage::setMeta(const char *modeLabel, int index1Based, int total) {
 
 void PreviewPage::onEnter() {
   back_ = false;
+  autoDone_ = false;
+  elapsed_ = 0;
   clockMs_ = 0;
   markDirty();
 }
@@ -338,7 +344,11 @@ void PreviewPage::onEnter() {
 void PreviewPage::onExit() { releaseRgb(); }
 
 void PreviewPage::update(uint32_t dtMs) {
+  elapsed_ += dtMs;
   clockMs_ += dtMs;
+  if (kind_ == Kind::Review && elapsed_ >= kReviewMs) {
+    autoDone_ = true;
+  }
   if (clockMs_ >= 1000) {
     clockMs_ = 0;
     markDirty();

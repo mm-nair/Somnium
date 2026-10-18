@@ -11,7 +11,7 @@ class Storage {
   // Writes JPEG bytes (truncates/replaces existing file).
   static bool saveJpeg(const char *path, const uint8_t *data, size_t length);
 
-  // Wipe /somnium/*.jpg (called on boot so stale/corrupt files can't poison browse).
+  // Wipe /somnium/*.jpg (serial `sdwipe`; not called on boot — keep demo plates).
   static void clearGallery();
 
   // Gallery helpers (scans /somnium for *.jpg). Index is 0-based.

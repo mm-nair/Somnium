@@ -100,19 +100,21 @@
   "modes": [
     {
       "id": "popcomic",
-      "label": "POP COMIC",
+      "label": "COMIC",
       "real": true,
+      "liberal": true,
       "tint": [220, 80, 180],
       "keywords": "cel-shaded color grade, soft outlines, flat pastel tones",
-      "prompt": "Apply a gentle cartoon grade. Same crop. Subtly include mood: {context}."
+      "prompt": "Restyle this image as if it was from a pop comic frame. Same crop, do not overly-invent content, but keep the theme. Think cross-hatching, color work, etc. Subtly include mood: {context}."
     },
     {
       "id": "watercolor",
-      "label": "WASH",
+      "label": "WATERCOLOR",
       "real": true,
+      "liberal": true,
       "tint": [255, 160, 60],
       "keywords": "soft watercolor wash, paper tooth, pigment blooms",
-      "prompt": "Apply a light watercolor wash. Same crop. Subtly include mood: {context}."
+      "prompt": "Restyle this image as if it was painted in water colors. Very subtly change the sky/backdrop to be matching the mood. Same crop. Subtly include mood: {context}."
     },
     {
       "id": "anime",
@@ -125,7 +127,7 @@
     },
     {
       "id": "surprise",
-      "label": "SURPRISE ME",
+      "label": "SURPRISE",
       "real": true,
       "liberal": true,
       "tint": [120, 220, 180],

@@ -4,16 +4,44 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
+#include <time.h>
 
 #include "Camera.h"
 #include "Config.h"
 #include "Console.h"
 #include "Image.h"
+#include "Storage.h"
 
 namespace Somnium {
 namespace {
 
 bool gCooking = false;
+Host::PumpFn gPump = nullptr;
+
+void pump() {
+  if (gPump != nullptr) {
+    gPump();
+  } else {
+    yield();
+  }
+}
+
+void applyTime(unsigned long epoch) {
+  if (epoch < 1700000000UL) {
+    return;
+  }
+  setenv("TZ", "PST8PDT,M3.2.0/2,M11.1.0/2", 1);
+  tzset();
+  timeval tv{};
+  tv.tv_sec = static_cast<time_t>(epoch);
+  tv.tv_usec = 0;
+  settimeofday(&tv, nullptr);
+  // Stay quiet on the wire during COOK↔DREAM — TX log lines can race RX.
+  if (!gCooking) {
+    Console::printf("TIME synced %lu\n", epoch);
+  }
+}
 
 void sendPhoto(JpegBuffer &photo) {
   Serial.printf("PHOTO %u %08x %lu %lu %d %d\n",
@@ -25,6 +53,12 @@ void sendPhoto(JpegBuffer &photo) {
 }
 
 void handleLine(char *line) {
+  unsigned long epoch = 0;
+  if (sscanf(line, "TIME %lu", &epoch) == 1) {
+    applyTime(epoch);
+    return;
+  }
+
   if (strcmp(line, "hello") == 0) {
     Serial.printf("OK somnium %lu\n",
                   static_cast<unsigned long>(Defaults::kSerialBaud));
@@ -74,16 +108,80 @@ void handleLine(char *line) {
     return;
   }
 
+  if (strcmp(line, "sdlist") == 0) {
+    if (!Storage::ready()) {
+      Console::println("ERR sd");
+      return;
+    }
+    const int n = Storage::photoCount();
+    Serial.printf("SDLIST %d\n", n);
+    char path[64];
+    for (int i = 0; i < n; ++i) {
+      if (Storage::photoPathAt(i, path, sizeof(path))) {
+        Serial.printf("%s\n", path);
+      }
+    }
+    Serial.print("SDLIST_END\n");
+    Serial.flush();
+    return;
+  }
+
+  if (strcmp(line, "sdpull") == 0) {
+    if (!Storage::ready()) {
+      Console::println("ERR sd");
+      return;
+    }
+    const int n = Storage::photoCount();
+    Serial.printf("SDPULL %d\n", n);
+    Serial.flush();
+    char path[64];
+    for (int i = 0; i < n; ++i) {
+      if (!Storage::photoPathAt(i, path, sizeof(path))) {
+        continue;
+      }
+      uint8_t *data = nullptr;
+      size_t len = 0;
+      if (!Storage::loadJpeg(path, &data, &len)) {
+        Serial.printf("ERR file %s\n", path);
+        continue;
+      }
+      const char *base = path;
+      if (const char *slash = strrchr(path, '/')) {
+        base = slash + 1;
+      }
+      Serial.printf("FILE %s %u\n", base, static_cast<unsigned>(len));
+      Serial.write(data, len);
+      Serial.print("\nFILE_END\n");
+      Serial.flush();
+      Storage::freeJpeg(data);
+    }
+    Serial.print("SDPULL_END\n");
+    Serial.flush();
+    return;
+  }
+
+  if (strcmp(line, "sdwipe") == 0) {
+    if (!Storage::ready()) {
+      Console::println("ERR sd");
+      return;
+    }
+    Storage::clearGallery();
+    Serial.print("OK sdwipe\n");
+    Serial.flush();
+    return;
+  }
+
   Console::println("ERR cmd");
 }
 
 bool readExact(uint8_t *dst, size_t len, uint32_t timeoutMs) {
+  // No UI pump here — Process SPI blits starve UART RX and drop DREAM bytes.
   size_t got = 0;
   const unsigned long deadline = millis() + timeoutMs;
   while (got < len && millis() < deadline) {
     if (Serial.available() <= 0) {
-      delay(1);
       yield();
+      delay(1);
       continue;
     }
     got += Serial.readBytes(dst + got, len - got);
@@ -91,13 +189,17 @@ bool readExact(uint8_t *dst, size_t len, uint32_t timeoutMs) {
   return got == len;
 }
 
-bool readLine(char *buf, size_t buflen, uint32_t timeoutMs) {
+bool readLine(char *buf, size_t buflen, uint32_t timeoutMs, bool allowPump) {
   size_t n = 0;
   const unsigned long deadline = millis() + timeoutMs;
   while (millis() < deadline && n + 1 < buflen) {
+    if (allowPump) {
+      pump();
+    } else {
+      yield();
+    }
     if (Serial.available() <= 0) {
       delay(1);
-      yield();
       continue;
     }
     const char c = static_cast<char>(Serial.read());
@@ -115,6 +217,8 @@ bool readLine(char *buf, size_t buflen, uint32_t timeoutMs) {
 }
 
 }  // namespace
+
+void Host::setPump(PumpFn fn) { gPump = fn; }
 
 void Host::poll() {
   if (gCooking) {
@@ -153,7 +257,6 @@ bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
   }
 
   gCooking = true;
-  // Drain inbound junk so we don't confuse the bridge.
   while (Serial.available() > 0) {
     Serial.read();
   }
@@ -170,16 +273,29 @@ bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
   Serial.write(jpeg, jpegLen);
   Serial.print("\nCOOK_END\n");
   Serial.flush();
-  Console::printf("HOST COOK %u B → bridge\n", static_cast<unsigned>(jpegLen));
 
   char line[96];
-  if (!readLine(line, sizeof(line), 180000)) {
-    gCooking = false;
-    if (err != nullptr) {
-      *err = "bridge timeout";
+  const unsigned long deadline = millis() + 180000;
+  while (true) {
+    if (millis() >= deadline) {
+      gCooking = false;
+      if (err != nullptr) {
+        *err = "bridge timeout";
+      }
+      return false;
     }
-    return false;
+    // Pump UI while waiting on xAI; stop once payload starts arriving.
+    if (!readLine(line, sizeof(line), 5000, /*allowPump=*/true)) {
+      continue;
+    }
+    unsigned long epoch = 0;
+    if (sscanf(line, "TIME %lu", &epoch) == 1) {
+      applyTime(epoch);
+      continue;
+    }
+    break;
   }
+
   if (strncmp(line, "ERR ", 4) == 0) {
     gCooking = false;
     if (err != nullptr) {
@@ -219,7 +335,7 @@ bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
     return false;
   }
   char end[16];
-  readLine(end, sizeof(end), 5000);  // optional trailing DREAM_END
+  readLine(end, sizeof(end), 5000, /*allowPump=*/false);
 
   if (buf[0] != 0xFF || buf[1] != 0xD8) {
     free(buf);
