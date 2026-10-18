@@ -99,28 +99,12 @@
   },
   "modes": [
     {
-      "id": "noir",
-      "label": "NOIR",
-      "real": true,
-      "tint": [80, 80, 90],
-      "keywords": "high-contrast B&W grade, crushed blacks, silver gelatin grain",
-      "prompt": "Apply a film-noir grade. Same crop and subjects. Subtly include mood: {context}."
-    },
-    {
-      "id": "cartoon",
-      "label": "CARTOON",
+      "id": "popcomic",
+      "label": "POP COMIC",
       "real": true,
       "tint": [220, 80, 180],
       "keywords": "cel-shaded color grade, soft outlines, flat pastel tones",
       "prompt": "Apply a gentle cartoon grade. Same crop. Subtly include mood: {context}."
-    },
-    {
-      "id": "cyberpunk",
-      "label": "CYBER",
-      "real": true,
-      "tint": [0, 220, 255],
-      "keywords": "magenta/cyan grade, neon edge light, cool shadows",
-      "prompt": "Apply a cyberpunk color grade. Same crop. Subtly include mood: {context}."
     },
     {
       "id": "watercolor",
@@ -131,14 +115,6 @@
       "prompt": "Apply a light watercolor wash. Same crop. Subtly include mood: {context}."
     },
     {
-      "id": "gourmet",
-      "label": "GOURMET",
-      "real": true,
-      "tint": [255, 220, 80],
-      "keywords": "warm editorial grade, richer contrast, appetizing color",
-      "prompt": "Apply a gourmet editorial grade. Same crop. Subtly include mood: {context}."
-    },
-    {
       "id": "anime",
       "label": "ANIME",
       "real": true,
@@ -146,9 +122,18 @@
       "tint": [255, 120, 200],
       "keywords": "anime cel shade, expressive eyes, clean linework, soft screen-tone, vibrant palette",
       "prompt": "Restyle as anime illustration: cel shading, clean linework, expressive features, richer color. Same crop/framing — do not invent a new background scene — but you MAY more freely reinterpret materials, faces, lighting, and small atmospheric details. Mood: {context}."
+    },
+    {
+      "id": "surprise",
+      "label": "SURPRISE ME",
+      "real": true,
+      "liberal": true,
+      "tint": [120, 220, 180],
+      "keywords": "unexpected style twist, mood-led grade, playful reinterpretation",
+      "prompt": "Surprise me: pick something random and fun — lead with mood, then whatever style/filter/grade twist you feel like. Same crop/framing — do not invent a new background scene — but you MAY more freely reinterpret materials, faces, lighting, color, and small atmospheric details. Mood: {context}."
     }
   ],
-  "prompt_system": "You write one short img2img EDIT prompt for Somnium.\n\nDefault balance:\n- Keep the SAME crop and recognizable subjects. Do not expand the frame or invent a new background scene.\n- Prefer style grade + subtle optical mood (grain, glare kiss, vignette, cool/warm tint, light haze).\n- At most a whisper of extra atmosphere — never dominant new props or scenery.\n- NEVER instruct adding readable text, logos, captions, watermarks, or place/event names.\n- Mention mood/weather lightly — optical only, not written words.\n\nIf the style draft says liberal stylization is allowed (e.g. anime), you may push the look harder: stronger stylization of faces/materials/lighting and a few small atmospheric flourishes — still same crop, no full scene rewrite, no text.\n\nOutput ONLY the edit prompt text.",
+  "prompt_system": "You write one short img2img EDIT prompt for Somnium.\n\nDefault balance:\n- Keep the SAME crop and recognizable subjects. Do not expand the frame or invent a new background scene.\n- Prefer style grade + subtle optical mood (grain, glare kiss, vignette, cool/warm tint, light haze).\n- At most a whisper of extra atmosphere — never dominant new props or scenery.\n- NEVER instruct adding readable text, logos, captions, watermarks, or place/event names.\n- Mention mood/weather lightly — optical only, not written words.\n\nIf the style draft says liberal stylization is allowed (e.g. anime, surprise), you may push the look harder: stronger stylization of faces/materials/lighting and a few small atmospheric flourishes — still same crop, no full scene rewrite, no text.\n\nOutput ONLY the edit prompt text.",
   "models": {
     "prompt_provider": "openai_compat",
     "image_provider": "xai",

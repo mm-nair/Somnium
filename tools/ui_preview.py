@@ -40,7 +40,7 @@ SCREENS = [
     ("review", "Review (post-shot)"),
     ("storage", "Storage"),
     ("storage_empty", "Storage (empty)"),
-    ("wifi_off", "Modes · WiFi off"),
+    ("usb_off", "Modes · USB."),
 ]
 
 # Fake SD gallery for Storage browsing in the preview.
@@ -242,7 +242,7 @@ class Preview:
         self.rect((0, 0, W, 22), self.theme["surface"])
         self.text(left, (6, 5), self.theme["pink"])
         self.text(
-            "WiFi*" if wifi else "WiFi.",
+            "USB*" if wifi else "USB.",
             (W // 2 - 18, 5),
             self.theme["muted"],
         )
@@ -271,12 +271,12 @@ class Preview:
         self.screen_i = i
         self.page = SCREENS[i][0]
         self.boot_live = self.page == "boot"
-        self.wifi_on = self.page != "wifi_off"
+        self.wifi_on = self.page != "usb_off"
         self.review_live = self.page == "review"
         self.review_ms = 0
         if self.page in ("boot", "boot_mid"):
             self.boot_ms = 0 if self.page == "boot" else 4500
-        elif self.page in ("modes", "wifi_off"):
+        elif self.page in ("modes", "usb_off"):
             self.index = 0
             self.slide = 0.0
             self.sliding = False
@@ -346,7 +346,7 @@ class Preview:
     def nudge_modes(self, delta: int):
         if delta == 0 or self.sliding:
             return
-        if self.page not in ("modes", "wifi_off"):
+        if self.page not in ("modes", "usb_off"):
             return
         self.index += 1 if delta > 0 else -1
         self.slide_from = 1.0 if delta > 0 else -1.0
@@ -463,7 +463,7 @@ class Preview:
     def draw_panel_page(self, dt: float):
         if self.page in ("boot", "boot_mid"):
             self.draw_boot(dt)
-        elif self.page in ("modes", "modes_slide", "wifi_off"):
+        elif self.page in ("modes", "modes_slide", "usb_off"):
             self.draw_modes(dt)
         elif self.page == "process":
             self.draw_process(dt)

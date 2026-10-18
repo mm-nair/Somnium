@@ -15,12 +15,10 @@ struct Mode {
 };
 
 constexpr Mode kModes[] = {
-    {"noir", "NOIR", 0x528B},
-    {"cartoon", "CARTOON", 0xDA96},
-    {"cyberpunk", "CYBER", 0x06FF},
+    {"popcomic", "POP COMIC", 0xDA96},
     {"watercolor", "WASH", 0xFD07},
-    {"gourmet", "GOURMET", 0xFEEA},
     {"anime", "ANIME", 0xFBD9},
+    {"surprise", "SURPRISE ME", 0x7EF6},
 };
 constexpr int kModeCount = sizeof(kModes) / sizeof(kModes[0]);
 

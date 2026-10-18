@@ -1,6 +1,6 @@
 #include "Chrono.h"
 
-#include <TimeSync.h>
+#include <stdio.h>
 #include <time.h>
 
 namespace Somnium {
@@ -18,24 +18,11 @@ void Chrono::formatDateTime(char *buf, size_t len) {
 }
 
 void Chrono::formatDate(char *buf, size_t len) {
-  if (Somnium::TimeSync::ready()) {
-    time_t now = time(nullptr);
-    struct tm parts;
-    localtime_r(&now, &parts);
-    strftime(buf, len, "%b %d", &parts);
-    return;
-  }
+  // No NTP without Wi‑Fi — event label is fine on the panel.
   snprintf(buf, len, "DubHacks");
 }
 
 void Chrono::formatTime(char *buf, size_t len) {
-  if (Somnium::TimeSync::ready()) {
-    time_t now = time(nullptr);
-    struct tm parts;
-    localtime_r(&now, &parts);
-    strftime(buf, len, "%H:%M", &parts);
-    return;
-  }
   const unsigned long sec = millis() / 1000;
   snprintf(buf, len, "%02lu:%02lu", (sec / 60) % 100, sec % 60);
 }

@@ -46,7 +46,11 @@ constexpr int kDisplayHeight = 240;
 constexpr int kCameraWidth = 320;
 constexpr int kJpegQuality = 70;
 constexpr unsigned long kButtonDebounceMs = 25;
-constexpr unsigned long kWifiConnectTimeoutMs = 20000;
+
+// Venue for Open-Meteo mood (sent with each USB cook).
+constexpr float kVenueLat = 47.6553f;
+constexpr float kVenueLon = -122.3035f;
 
 }  // namespace Defaults
 }  // namespace Somnium
+

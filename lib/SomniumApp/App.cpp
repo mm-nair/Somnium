@@ -1,16 +1,12 @@
 #include "App.h"
 
-#include <ApiClient.h>
+#include <Config.h>
 #include <Console.h>
 #include <Host.h>
 #include <Image.h>
 #include <Inputs.h>
-#include <ServerConfig.h>
 #include <Storage.h>
-#include <TimeSync.h>
 #include <Ui.h>
-#include <Wifi.h>
-#include <math.h>
 #include <string.h>
 
 #include "Brand.h"
@@ -280,31 +276,8 @@ void requestCapture() {
 }
 
 void runPipeline() {
-  Somnium::ApiClient::setPump(pumpCookUi);
-
   if (!gCameraOk) {
     failProcess("no camera — dial back");
-    return;
-  }
-
-  gProcess.setStatus("wifi…");
-  pumpCookUi();
-  if (!Somnium::Wifi::isConnected()) {
-    Somnium::Console::println("WIFI wait…");
-    Somnium::Wifi::waitConnected(20000);
-  }
-  if (!Somnium::Wifi::isConnected()) {
-    failProcess("no wifi — dial back");
-    return;
-  }
-
-  gProcess.setStatus("server…");
-  pumpCookUi();
-  String healthErr;
-  if (!Somnium::ApiClient::health(&healthErr)) {
-    char buf[40];
-    snprintf(buf, sizeof(buf), "no server (%s)", healthErr.c_str());
-    failProcess(buf);
     return;
   }
 
@@ -316,51 +289,32 @@ void runPipeline() {
     return;
   }
 
-  char takenAt[32] = {0};
-  const bool haveTime = Somnium::TimeSync::formatUtc(takenAt, sizeof(takenAt));
-  if (!haveTime) {
-    Somnium::Console::println("TIME not synced yet — mood uses server clock");
-  }
-
-  Somnium::ProcessRequest req;
-  req.jpeg = photo.data;
-  req.jpegLength = photo.length;
-  req.styleId = gMode.selected().id;
-  req.takenAt = haveTime ? takenAt : nullptr;
-  req.lat = ServerConfig::kVenueLat;
-  req.lon = ServerConfig::kVenueLon;
-
-  gProcess.setStatus("cooking on thinkpad…");
+  gProcess.setStatus("usb → thinkpad…");
   pumpCookUi();
-  Somnium::Console::printf("API %s style=%s t=%s\n", ServerConfig::kHost,
-                           req.styleId, haveTime ? takenAt : "-");
-  Somnium::ProcessResponse resp;
-  const bool ok = Somnium::ApiClient::process(req, resp);
-  if (!ok) {
-    Somnium::Console::printf("ERR api %s\n", resp.error.c_str());
-    char buf[40];
-    snprintf(buf, sizeof(buf), "api %s", resp.error.c_str());
-    buf[sizeof(buf) - 1] = '\0';
-    Somnium::ApiClient::freeResponse(resp);
+  Somnium::JpegBuffer dream{};
+  String bridgeErr;
+  // Mood clock comes from the laptop; venue is baked into firmware defaults.
+  if (!Somnium::Host::cook(photo.data, photo.length, gMode.selected().id,
+                           nullptr, Somnium::Defaults::kVenueLat,
+                           Somnium::Defaults::kVenueLon, dream, &bridgeErr)) {
+    Somnium::Console::printf("ERR bridge %s\n", bridgeErr.c_str());
     Somnium::Image::freePhoto(photo);
+    char buf[40];
+    snprintf(buf, sizeof(buf), "%s", bridgeErr.c_str());
     failProcess(buf);
     return;
   }
 
-  Somnium::Console::printf("API ok %u B  %s\n",
-                           static_cast<unsigned>(resp.length),
-                           resp.context.c_str());
-  // Dual slideshow on device; ThinkPad already has *_0_orig / *_1_dream.
+  Somnium::Console::printf("USB cook ok %u B\n",
+                           static_cast<unsigned>(dream.length));
   savePair(gMode.selected().id, gShotCount + 1, photo.data, photo.length,
-           resp.jpeg, resp.length);
+           dream.data, dream.length);
   Somnium::Image::freePhoto(photo);
 
   freeResult();
-  gResultJpeg = resp.jpeg;
-  gResultLen = resp.length;
-  resp.jpeg = nullptr;
-  resp.length = 0;
-  Somnium::ApiClient::freeResponse(resp);
+  gResultJpeg = dream.data;
+  gResultLen = dream.length;
+  dream.data = nullptr;
   showReview();
 }
 
@@ -438,7 +392,6 @@ void Runtime::begin(bool cameraOk) {
 }
 
 void Runtime::tick() {
-  Somnium::Wifi::poll();
   Somnium::Host::poll();
   Somnium::Inputs::update();
   mapInputs();
