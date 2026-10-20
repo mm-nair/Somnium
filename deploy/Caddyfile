@@ -1,0 +1,18 @@
+# TLS for the public name. Caddy obtains and renews the certificate over
+# HTTP-01, so ports 80 and 443 must reach this process.
+#
+# A cook sends no response bytes until the JPEG is ready. The board waits up
+# to 300 seconds (kCookTimeoutMs). These timeouts sit past that.
+{
+	email {$SOMNIUM_ACME_EMAIL}
+}
+
+{$SOMNIUM_HOSTNAME} {
+	reverse_proxy somnium:8080 {
+		transport http {
+			response_header_timeout 360s
+			read_timeout 360s
+			write_timeout 60s
+		}
+	}
+}

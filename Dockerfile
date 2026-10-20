@@ -1,3 +1,6 @@
+# python:3.12-slim-bookworm is published for linux/amd64 and linux/arm64.
+# Build on the VM itself: Ampere A1 is arm64, the AMD micro shape is amd64.
+# Pip wheels for the pinned requirements exist for both. No apt packages.
 FROM python:3.12-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

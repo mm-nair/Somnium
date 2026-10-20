@@ -80,6 +80,7 @@ class Pipeline:
         lat: float | None = None,
         lon: float | None = None,
         force_real: bool = False,
+        skip_gallery: bool = False,
     ) -> ProcessResult:
         styles = self.cfg.get("styles") or {}
         if style_id not in styles:
@@ -175,12 +176,16 @@ class Pipeline:
             )
         )
         # Optional gallery upload. Must not delay or fail the shot.
-        _start_gallery_upload(
-            orig_path=orig_path,
-            dream_path=dream_path,
-            meta_path=meta_path,
-            stem=stem,
-        )
+        # skip_gallery means the camera is uploading this shot itself.
+        if skip_gallery:
+            logger.info("Gallery upload left to the camera for %s", stem)
+        else:
+            _start_gallery_upload(
+                orig_path=orig_path,
+                dream_path=dream_path,
+                meta_path=meta_path,
+                stem=stem,
+            )
 
         return ProcessResult(
             image=result_image,

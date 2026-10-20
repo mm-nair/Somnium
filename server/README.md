@@ -1,213 +1,166 @@
 # Somnium server
 
 FastAPI brain for Project Somnium. Locally it runs on the laptop, inside this
-repo's Python flake. The same process can run on Fly.io so a shot does not
-need the laptop powered on. The repo [README](../README.md) covers flashing,
-the USB bridge, and creative config.
+repo's Python flake. The same process can run on an Oracle Cloud Always Free
+VM so a shot does not need the laptop powered on. The repo
+[README](../README.md) covers flashing, the USB bridge, and creative config.
 
-Saved shots go to `server/outputs/` unless `SOMNIUM_OUTPUT_DIR` is set. On Fly
-that directory is `/data/outputs` on a persistent volume. `output_dir` in
-[`settings.json`](settings.json) is `outputs`, and a relative path is resolved
-next to this directory.
+Saved shots go to `server/outputs/` unless `SOMNIUM_OUTPUT_DIR` is set. On the
+VM that directory is `/data/outputs` on a Docker volume on the boot disk.
+`output_dir` in [`settings.json`](settings.json) is `outputs`, and a relative
+path is resolved next to this directory.
 
-## Why Fly.io
+## Why Oracle Cloud Always Free
 
-The server is one long HTTP request, not a WebSocket or a serial port. `POST
-/v1/process` reads the JPEG, asks Open-Meteo for the weather, asks xAI to
-rewrite the prompt (timeout 90s), asks xAI to edit the image (timeout 240s),
-writes the original, the dream, and a JSON sidecar, then returns the dream
-JPEG. A daemon thread may POST that trio to the gallery for another 20
-seconds. Surprise mode remembers the last variation pick in memory and in
-`.somnium-variations.json` under the output directory.
+The server is one long HTTP request. `POST /v1/process` can sit for a few
+minutes while xAI works, then writes the shot and may upload it in the
+background. The camera in [PR #8](https://github.com/mm-nair/Somnium/pull/8)
+reaches it with HTTPS on port 443, a hostname, and `X-Somnium-Token`.
 
-Vercel already hosts the gallery, and it is the wrong place for this process.
-A cook can run longer than a function's comfortable window, the disk on a
-function disappears when the request ends, and the gallery thread is still
-running when the JPEG is returned. Restructuring onto Blob and a queue would
-be a different server. Fly runs the existing uvicorn process:
+That needs a process that stays running, a disk that survives reboots, and no
+proxy that cuts a silent response off at one or two minutes. Oracle's Always
+Free Ampere A1 VM is that machine, and the resources below are **$0** for the
+life of the account. They are not the 30-day $300 trial credit. Do not upgrade
+the account to Pay As You Go unless you mean to. Always Free resources stay
+free after an upgrade too, but anything past the limits is billed.
 
-- HTTPS on `https://<app>.fly.dev` (shared IPv4, no extra address charge)
-- one always-on `shared-cpu-1x` machine with 512 MB, so Pillow can decode the
-  larger edit without running out of memory
-- a 1 GB volume for the shot files
-- `GET /health` for the platform check
-- proxy idle timeout of 600 seconds, because a cook sends no bytes until the
-  JPEG is ready and Fly's default is 60 seconds
+Sources, checked against the current docs:
 
-Cost for a new Fly account: there is no free tier. The trial is 2 machine-hours
-or 7 days, whichever ends first, and trial machines stop after a few minutes,
-so it is only a smoke test. After a card is on file, this machine is about
-$3.69 per 30 days in Ashburn (`iad`) or Secaucus (`ewr`), and a bit more in
-Seattle (`sea`, the default in `fly.toml`). The 1 GB volume is about $0.15 per
-month. Egress in North America is $0.02 per GB. A camera shot is a few hundred
-kilobytes, so bandwidth stays small. Budget about $4 a month if the machine
-stays up. Do not scale past one machine: the volume attaches to a single
-Machine, and a second copy would not see the files.
+- [Always Free Resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm): Ampere A1 is 2 OCPUs and 12 GB total (1,500 OCPU hours and 9,000 GB hours per month). Up to two AMD `VM.Standard.E2.1.Micro` instances, each 1/8 OCPU and 1 GB. Instances must be in the home region. 200 GB of block storage, boot volume included, default boot volume 50 GB. 10 TB of outbound data per month. Idle instances may be reclaimed.
+- [Free Tier FAQ](https://www.oracle.com/cloud/free/faq/): a credit or debit card is required to prove identity. Oracle may place an authorization hold. The hold is not a charge. Always Free continues after the trial credits expire. An account idle for 30 days may be treated as abandoned.
+- [Changing payment method](https://docs.oracle.com/en-us/iaas/Content/Billing/Tasks/changingpaymentmethod.htm): signup authorizes the card for $1, and Oracle reverses that authorization. The bank decides when the hold disappears.
 
-`auto_stop_machines` is off. Waking a stopped machine on the shutter press adds
-a cold start in front of an already slow edit, and it can kill the gallery
-upload thread.
+Use one Ampere A1 instance: 1 OCPU, 6 GB RAM, Ubuntu, a public subnet, and the ephemeral public IPv4 that the launch form offers. 6 GB leaves half of the free memory unused and is enough for Python and a decoded edit. Build the image on the VM. The Dockerfile uses the official Python image, which publishes `linux/arm64` and `linux/amd64`, and the pinned wheels exist for both. If the console says "out of host capacity", try another availability domain, then the AMD micro shape. The micro shape has 1 GB of RAM, which is tight for an image edit; add a swap file on the boot disk before relying on it.
+
+### What does not fit
+
+| Host | Why it is not the one |
+| --- | --- |
+| Google Cloud `e2-micro` | Ongoing free tier, not a trial: one non-preemptible `e2-micro` in `us-west1`, `us-central1`, or `us-east1`, plus 30 GB-months of disk ([Free Tier limits](https://docs.cloud.google.com/free/docs/free-cloud-features)). It only continues after the trial if the project is on a paid billing account. Past the limits, including 1 GB of North America egress per month, is billed. 1 GB of RAM is the same squeeze as the AMD micro. Usable if Oracle has no capacity. |
+| Render free | [Spins down after 15 minutes](https://render.com/docs/free) without a request, takes about a minute to wake, and the filesystem is lost on spin-down. Persistent disks are paid. A shutter press would wait on a cold start, and saved shots disappear. |
+| Koyeb free | [One free instance](https://www.koyeb.com/docs/reference/instances): 512 MB, 0.1 vCPU, 2 GB SSD, Frankfurt or Washington only. It scales to zero after 1 hour without traffic, and free instances cannot attach a volume, so the disk does not survive idle. |
+| Cloudflare Tunnel from home | The tunnel is free, but proxied HTTP has a [proxy read timeout of 125 seconds](https://developers.cloudflare.com/fundamentals/reference/connection-limits/) (HTTP 524). Only Enterprise zones can raise it. A cook is silent until the JPEG is ready and the board waits 300 seconds, so the tunnel would cut it off. The laptop would also have to stay on. |
+| Fly.io | No ongoing free tier. Left in git history only. |
 
 ## Deploy
 
-Install [flyctl](https://fly.io/docs/flyctl/install/) and `fly auth login`.
-From the repository root:
+1. Create an Oracle Cloud Free Tier account. Use a real credit or debit card (not a prepaid or single-use card). Expect a $1 authorization hold, not a charge. Pick the home region nearest the camera. It cannot be changed later, and the free VM has to live there. Do not click through to Pay As You Go.
 
-1. Pick a globally unique app name. `fly.toml` says `somnium-camera`. If that
-   name is taken, change the `app` line. The public URL is
-   `https://<app>.fly.dev`.
-2. Create the app and the volume in the same region as `primary_region`
-   (`sea` unless you edit it):
+2. Create a VM instance:
 
-```sh
-fly apps create somnium-camera
-fly volumes create somnium_data --size 1 --region sea -a somnium-camera
-```
+   - Image: Ubuntu, the one marked Always Free Eligible. Skip Oracle Linux Cloud Developer. That image wants at least 8 GB, and this VM is 6 GB.
+   - Shape: `VM.Standard.A1.Flex`, 1 OCPU, 6 GB. A1 can be created in any availability domain except South Korea North (Chuncheon). If the console says "out of host capacity", try another availability domain, then `VM.Standard.E2.1.Micro` (1 GB; add a swap file on the boot disk before relying on it).
+   - Networking: public subnet, assign a public IPv4. Use that ephemeral address. Do not create extra reserved public IPs and leave them unattached.
+   - Boot volume: leave the default (about 50 GB). It counts toward the 200 GB Always Free block storage. Do not add another volume.
+   - Add your SSH key.
 
-3. Set secrets. These are not written to `fly.toml` or git. Generate the
-   process token yourself (`openssl rand -hex 32`). It is a different secret
-   from the gallery token.
+3. In the subnet security list, allow ingress TCP 80 and TCP 443 from `0.0.0.0/0`. Leave SSH restricted to your own IP if you can. Do not open 8080. The app is only on the Docker network.
+
+4. SSH in, then let the instance firewall accept the same ports (Oracle's Ubuntu image drops them even after the security list allows them):
 
 ```sh
-fly secrets set -a somnium-camera \
-  XAI_KEY='xai-...' \
-  SOMNIUM_PROCESS_TOKEN='paste-a-long-random-token' \
-  SOMNIUM_UPLOAD_URL='https://www.somnium.photo/api/upload' \
-  SOMNIUM_UPLOAD_TOKEN='gallery-token'
+sudo apt-get update
+sudo apt-get install -y docker.io docker-compose-v2 git
+sudo usermod -aG docker "$USER"
 ```
 
-`XAI_KEY` and `SOMNIUM_PROCESS_TOKEN` are required. `fly.toml` sets
-`SOMNIUM_REQUIRE_AUTH=1`, and the process exits on boot if the process token
-is missing. Omit the two `SOMNIUM_UPLOAD_*` secrets to keep shots on the
-volume without posting them to the gallery. Optional venue overrides, if the
-camera does not send lat/lon:
+Log out and back in so the docker group applies. Then:
 
 ```sh
-fly secrets set -a somnium-camera \
-  SOMNIUM_VENUE_LAT='47.6553' \
-  SOMNIUM_VENUE_LON='-122.3035' \
-  SOMNIUM_VENUE_LABEL='Seattle'
+git clone https://github.com/mm-nair/Somnium.git /opt/somnium
+cd /opt/somnium
+sudo bash deploy/open-http-ports.sh
 ```
 
-4. Deploy from the repository root (the Dockerfile builds the image):
+5. Secrets. `openssl rand -hex 32` for the process token. This is not the gallery token.
 
 ```sh
-fly deploy -a somnium-camera
-curl -fsS https://somnium-camera.fly.dev/health
+cd /opt/somnium
+cp deploy/.env.example deploy/.env
+chmod 600 deploy/.env
 ```
 
-`/health` is public and includes `"auth": true` when the process token is
-set. `POST /v1/process` without `X-Somnium-Token` or `Authorization: Bearer`
-returns 401 and does not call xAI. OpenAPI docs are off while the token is set.
+Fill `SOMNIUM_HOSTNAME`, `SOMNIUM_ACME_EMAIL`, `SOMNIUM_PROCESS_TOKEN`, and `XAI_KEY`. `SOMNIUM_REQUIRE_AUTH=1` is set by Compose. The process exits if the token is empty, so a public VM cannot boot open.
 
-A deploy restarts the machine and drops an in-flight cook. Shot files on the
-volume remain. If a gallery upload was still in its 20 second window, backfill
-from the volume (the secrets are already in the machine environment):
+6. A hostname. Either is free. Set `SOMNIUM_HOSTNAME` to the name you pick.
+
+   - DuckDNS, and it survives an IP change: create a name at [duckdns.org](https://www.duckdns.org/), put `DUCKDNS_DOMAIN` (the name only, not `.duckdns.org`) and `DUCKDNS_TOKEN` in `deploy/.env`, then run `deploy/duckdns-update.sh`. Put it in cron if you want (`*/30 * * * *`).
+   - No account: `sslip.io` names the current address. `140.238.10.20` becomes `140-238-10-20.sslip.io`. [An ephemeral public IP stays assigned when the instance stops](https://docs.oracle.com/en-us/iaas/Content/Network/Tasks/managingpublicIPs.htm) and is deleted when the instance is terminated. If that happens, the name changes and the camera config has to change with it.
+
+7. Start it, and start it again on boot:
 
 ```sh
-fly ssh console -a somnium-camera -C \
-  "python /app/server/scripts/somnium_uploader.py watch /data/outputs --once"
+cd /opt/somnium/deploy
+set -a
+. ./.env
+set +a
+docker compose up -d --build
+docker compose ps
+curl -fsS "https://${SOMNIUM_HOSTNAME}/health"
+sudo cp /opt/somnium/deploy/somnium.service /etc/systemd/system/somnium.service
+sudo systemctl enable --now somnium.service
 ```
 
-Prompt text lives in `creative/creative.json` inside the image. Editing it
-means a new `fly deploy`. To try a file without rebuilding, set
-`SOMNIUM_CREATIVE_PATH` to a copy on the volume.
+`/health` is public and includes `"auth": true`. `POST /v1/process` without `X-Somnium-Token` or `Authorization: Bearer` returns 401 and does not call xAI. API docs are off while the token is set.
 
-### Local container
-
-Same image, no Fly account. `SOMNIUM_REQUIRE_AUTH` is unset here, so a token
-is optional. Set one if you want to see the 401.
+Caddy obtains the certificate over port 80 and redirects callers to 443. The reverse proxy waits 360 seconds for the cook, past the board's 300 second limit. Shot files are in the `somnium_outputs` volume. Backfill the gallery from there with:
 
 ```sh
-docker build -t somnium-server .
-docker run --rm -p 8080:8080 \
-  -e SOMNIUM_PROCESS_TOKEN=dev-token \
-  -e XAI_KEY \
-  -v somnium-outputs:/data \
-  somnium-server
+docker compose exec somnium \
+  python /app/server/scripts/somnium_uploader.py watch /data/outputs --once
 ```
 
-`-e XAI_KEY` forwards the variable from the shell. Do not bake it into the
-image. `GET http://127.0.0.1:8080/health` should return `"ok": true`.
+A prompt edit is a `docker compose up -d --build` from `/opt/somnium` after you pull.
+
+### Idle reclaim
+
+Oracle may reclaim an Always Free instance when, over 7 days, CPU utilization at the 95th percentile is under 20% and network utilization is under 20%. On A1, memory utilization under 20% is a third condition, and all three have to be true together. This process on a 6 GB VM sits well under 20% memory, so memory does not protect it. A few short cooks can also stay under the CPU and network lines. A lightly used VM can be taken back. Do not add a CPU burner. The account can also be closed if nobody signs in for 30 days. Sign in now and then.
 
 ### Laptop clients
 
-`./scripts/server.sh` is unchanged for a laptop bind: with no
-`SOMNIUM_PROCESS_TOKEN`, `/v1/process` stays open. To send USB cooks at the
-Fly host instead of localhost, put these in `.env` (mode `600`, never commit)
-and start the bridge:
+`./scripts/server.sh` with no `SOMNIUM_PROCESS_TOKEN` is still the open laptop server. To send USB cooks at the VM:
 
 ```sh
-SOMNIUM_SERVER_URL=https://somnium-camera.fly.dev/v1/process
-SOMNIUM_PROCESS_TOKEN=paste-a-long-random-token
+SOMNIUM_SERVER_URL=https://somnium.duckdns.org/v1/process
+SOMNIUM_PROCESS_TOKEN=<the same process token>
 SOMNIUM_PROCESS_TIMEOUT=360
 ```
 
-`scripts/usb_bridge.py` and `scripts/usb_cooktest.py` read those. `--url` and
-`--timeout` still override them. `./scripts/cook.sh photo.jpg --http` uses the
-same URL and sends the same header. The USB cable still needs the laptop.
-Laptop-off shooting needs the Wi-Fi firmware below.
+The USB cable still needs the laptop.
 
-## ESP32 on Wi-Fi
+## ESP32
 
-This branch does not change the board. The open pull request
-[Wi-Fi cook path with USB serial fallback](https://github.com/mm-nair/Somnium/pull/6)
-(`cursor/wifi-camera-upload-dafc`) is the transport. It already POSTs the same
-multipart body to a host the camera stores in NVS, with compile-time defaults
-in `include/server_config.h`:
+[PR #8](https://github.com/mm-nair/Somnium/pull/8) is the Wi-Fi cook. This branch does not change firmware. In the gitignored `include/server_config.h` from that PR:
 
-| Setting | Remote value |
+| Setting | Value |
 | --- | --- |
-| `SOMNIUM_SERVER_HOST` | `somnium-camera.fly.dev` |
+| `SOMNIUM_SERVER_HOST` | `somnium.duckdns.org` (or the sslip.io name) |
 | `SOMNIUM_SERVER_PORT` | `443` |
 | `SOMNIUM_SERVER_PATH` | `/v1/process` |
 | `SOMNIUM_SERVER_TLS` | `1` |
+| `SOMNIUM_PROCESS_TOKEN` | the same secret as `deploy/.env` |
 
-The setup portal's host field wins over the header after a save. `somnium.local`
-and the laptop mDNS advertiser in that PR only work on the same LAN. A Fly
-hostname does not need them. The board's cook timeout is 300 seconds
-(`kCookTimeoutMs`). Fly's idle timeout is 600 seconds, so the proxy is not
-what ends a normal edit. The Wi-Fi client uses `WiFiClientSecure` with
-certificate checks off, which is enough to reach Fly's certificate.
+An empty host still means the laptop bridge and `somnium.local`. A non-empty host makes the board POST the cook itself. It sends `X-Somnium-Token` when the process token is non-empty. TLS uses `WiFiClientSecure::setInsecure()`, so it does not need a CA store. Caddy still presents a real Let's Encrypt certificate.
 
-That PR does not send a process secret. Before a public host will accept a
-shot, `HttpCook`'s cook POST has to add one header on the request it already
-builds (`Content-Type` / `Accept` in `HttpCook.cpp`):
-
-```
-X-Somnium-Token: <SOMNIUM_PROCESS_TOKEN>
-```
-
-`Authorization: Bearer <SOMNIUM_PROCESS_TOKEN>` is also accepted. Store the
-token in NVS the way that PR already stores the gallery token, and do not
-commit it. The gallery token (`SOMNIUM_GALLERY_TOKEN` / `SOMNIUM_UPLOAD_TOKEN`)
-is a different secret for `somnium.photo`. Sending it to Fly will 401.
-
-Until that header exists on the board, leave the camera's gallery URL empty
-and let Fly upload, or the reverse. That PR also sends `skip_gallery=1` so
-the two uploads do not double-post. This server ignores unknown form fields,
-including `source` and `skip_gallery`, so merging the Wi-Fi branch later does
-not require a change here for the cook itself. After both exist, a shot with
-`skip_gallery=1` would still be uploaded by this server until that field is
-honored. Use only one uploader until then.
-
-`GET /health` stays unauthenticated, which matches that PR's health check
-before the cook.
+When that firmware also has a gallery URL and gallery token, the cook includes `skip_gallery=1` and this server does not upload the same shot. Leave the camera gallery settings empty to let the VM upload. The gallery token is a different secret from the process token.
 
 ## Environment
 
 | Variable | Role |
 | --- | --- |
-| `XAI_KEY` | xAI key for prompt and image edits. `XAI_API_KEY` is accepted as an alias. |
+| `XAI_KEY` | xAI key. `XAI_API_KEY` is accepted as an alias. |
 | `SOMNIUM_PROCESS_TOKEN` | Shared secret for `POST /v1/process`. Unset means open, which is the laptop default. |
-| `SOMNIUM_REQUIRE_AUTH` | `1` on Fly. The process refuses to start without the token. |
+| `SOMNIUM_REQUIRE_AUTH` | `1` in Compose. The process refuses to start without the token. |
+| `SOMNIUM_HOSTNAME` | Name Caddy certificates. Set in `deploy/.env`. |
+| `SOMNIUM_ACME_EMAIL` | Let's Encrypt account email. |
 | `SOMNIUM_SERVER_URL` | Bridge and cook client base URL or full `/v1/process` URL. |
 | `SOMNIUM_PROCESS_TIMEOUT` | Bridge HTTP timeout in seconds. Default 240. Use 360 for a remote cook. |
-| `SOMNIUM_HOST` / `SOMNIUM_PORT` | Bind address. `PORT` is used if `SOMNIUM_PORT` is unset. |
-| `SOMNIUM_OUTPUT_DIR` | Shot directory. Relative paths are still next to `server/`. |
+| `SOMNIUM_HOST` / `SOMNIUM_PORT` | Bind address inside the container. `PORT` is used if `SOMNIUM_PORT` is unset. |
+| `SOMNIUM_OUTPUT_DIR` | Shot directory. `/data/outputs` on the VM. |
 | `SOMNIUM_VENUE_LAT` / `SOMNIUM_VENUE_LON` / `SOMNIUM_VENUE_LABEL` | Override `settings.json` when the request has no coordinates. |
 | `SOMNIUM_CREATIVE_PATH` / `SOMNIUM_SETTINGS_PATH` | Override the JSON files baked into the image. |
 | `SOMNIUM_UPLOAD_URL` / `SOMNIUM_UPLOAD_TOKEN` | Gallery upload. Both must be set or the hook does nothing. |
+| `DUCKDNS_DOMAIN` / `DUCKDNS_TOKEN` | Optional. Used only by `deploy/duckdns-update.sh`. |
 
 ## Gallery auto-upload
 
@@ -231,7 +184,8 @@ The camera server uploads a shot itself when both variables are set in its
 environment. The hook starts after the metadata JSON is written, on a daemon
 thread with a 20 second timeout. It logs success or failure and does not delay
 the shot or change the USB response. With that hook enabled, the directory
-watcher is optional.
+watcher is optional. A cook that sends `skip_gallery=1` (the Wi-Fi camera
+does this when it uploads the shot itself) does not start the hook.
 
 `server/scripts/somnium_uploader.py` is the other path: it polls
 `server/outputs` and uploads each finished trio. Use the watcher when the

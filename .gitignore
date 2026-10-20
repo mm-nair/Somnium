@@ -6,6 +6,7 @@
 server/outputs/
 proc_output/
 .env
+deploy/.env
 *.jpg
 !creative/**/*.jpg
 compile_commands.json

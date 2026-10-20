@@ -4,7 +4,7 @@
 Somnium cooks over USB on this branch. Point the POST at a remote server with
 SOMNIUM_SERVER_URL or --url. SOMNIUM_PROCESS_TOKEN is sent as X-Somnium-Token.
 
-  ./scripts/server.sh          # terminal A — leave running (or use the Fly host)
+  ./scripts/server.sh          # terminal A — leave running (or use the Oracle host)
   ./scripts/usb_bridge.sh      # terminal B — ONLY while shooting
 
 Stop the bridge before flash / sd pull / other serial tools:

@@ -26,6 +26,13 @@ app = FastAPI(
 )
 
 
+def form_flag(value: object) -> bool:
+    """True only for a real form string. Direct tests pass None, not a field."""
+    if not isinstance(value, str):
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def header_preview(text: str, limit: int = 512) -> str:
     text = text.encode("ascii", "replace").decode("ascii")
     text = "".join(character if 32 <= ord(character) <= 126 else " " for character in text)
@@ -64,6 +71,7 @@ async def process(
     lat: Optional[float] = Form(None),
     lon: Optional[float] = Form(None),
     force_real: Optional[str] = Form(None),
+    skip_gallery: Optional[str] = Form(None),
 ):
     denied = rejection(request)
     if denied is not None:
@@ -75,7 +83,7 @@ async def process(
         return JSONResponse({"error": "expected JPEG"}, status_code=400)
 
     client_ip = request.client.host if request.client else None
-    force = (force_real or "").lower() in ("1", "true", "yes", "on")
+    force = form_flag(force_real)
     try:
         result = pipeline.process(
             image=raw,
@@ -85,6 +93,7 @@ async def process(
             lat=lat,
             lon=lon,
             force_real=force,
+            skip_gallery=form_flag(skip_gallery),
         )
     except Exception as err:  # noqa: BLE001 — edge client gets a clean error
         logger.exception("Processing failed for style=%s", style)

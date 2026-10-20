@@ -155,6 +155,45 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(calls[0].url.path, "/v1/process")
         pipeline.assert_called_once()
 
+    def test_skip_gallery_is_forwarded_only_when_the_field_says_so(self):
+        result = Mock(
+            style_id="anime",
+            prompt="ok",
+            image=JPEG,
+            context={"summary": "day"},
+            meta={"orig_path": "/out/a.jpg", "dream_path": "/out/b.jpg"},
+        )
+        with patch.dict(os.environ, {"SOMNIUM_PROCESS_TOKEN": ""}), patch.object(
+            app_module.pipeline, "process", return_value=result
+        ) as pipeline:
+            asyncio.run(
+                app_module.process(
+                    request=http_request(),
+                    image=UploadFile(io.BytesIO(JPEG)),
+                    style="anime",
+                    taken_at=None,
+                    lat=None,
+                    lon=None,
+                    force_real=None,
+                    skip_gallery="1",
+                )
+            )
+            skipped = pipeline.call_args.kwargs["skip_gallery"]
+            asyncio.run(
+                app_module.process(
+                    request=http_request(),
+                    image=UploadFile(io.BytesIO(JPEG)),
+                    style="anime",
+                    taken_at=None,
+                    lat=None,
+                    lon=None,
+                    force_real=None,
+                )
+            )
+            absent = pipeline.call_args.kwargs["skip_gallery"]
+        self.assertTrue(skipped)
+        self.assertFalse(absent)
+
     def test_health_stays_public_and_reports_auth(self):
         with patch.dict(os.environ, {"SOMNIUM_PROCESS_TOKEN": TOKEN}):
             body = app_module.health()
@@ -268,11 +307,11 @@ class ClientHeaderTests(unittest.TestCase):
                 usb_bridge.default_process_url(), "http://127.0.0.1:8080/v1/process"
             )
         with patch.dict(
-            os.environ, {"SOMNIUM_SERVER_URL": "https://somnium-camera.fly.dev"}
+            os.environ, {"SOMNIUM_SERVER_URL": "https://somnium.duckdns.org"}
         ):
             self.assertEqual(
                 usb_bridge.default_process_url(),
-                "https://somnium-camera.fly.dev/v1/process",
+                "https://somnium.duckdns.org/v1/process",
             )
         with patch.dict(os.environ, {"SOMNIUM_PROCESS_TOKEN": TOKEN}), patch.object(
             usb_bridge.urllib.request, "urlopen", return_value=_Body(JPEG)
@@ -306,7 +345,7 @@ class ClientHeaderTests(unittest.TestCase):
                     None,
                     None,
                     False,
-                    "https://somnium-camera.fly.dev",
+                    "https://somnium.duckdns.org",
                     out,
                 )
         self.assertEqual(code, 0)

@@ -1,7 +1,7 @@
 """Shared-secret check for POST /v1/process.
 
 The laptop bind is open when SOMNIUM_PROCESS_TOKEN is unset. A public host
-sets the token and, on Fly, SOMNIUM_REQUIRE_AUTH=1 so a missing secret
+sets the token and, on the VM, SOMNIUM_REQUIRE_AUTH=1 so a missing secret
 refuses to boot instead of accepting anonymous cooks.
 """
 

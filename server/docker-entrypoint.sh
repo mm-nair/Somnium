@@ -1,6 +1,6 @@
 #!/bin/sh
 # Root only long enough to make the persistent outputs directory writable,
-# then drop to the somnium user. Fly mounts the volume as root.
+# then drop to the somnium user. The Docker volume is mounted as root.
 set -eu
 out="${SOMNIUM_OUTPUT_DIR:-/data/outputs}"
 parent=$(dirname "$out")
