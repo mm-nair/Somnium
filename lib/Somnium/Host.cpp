@@ -20,6 +20,46 @@ namespace {
 
 bool gCooking = false;
 Host::PumpFn gPump = nullptr;
+Host::LinkFn gOnLink = nullptr;
+Host::LineFn gLineHook = nullptr;
+
+void noteLink() {
+  if (gOnLink != nullptr) {
+    gOnLink();
+  }
+}
+
+void appendExtras(const CookExtras *extras) {
+  if (extras == nullptr) {
+    return;
+  }
+  if (extras->deviceId != nullptr && extras->deviceId[0] != '\0') {
+    Serial.printf(" dev=%s", extras->deviceId);
+  }
+  if (extras->sequence > 0) {
+    Serial.printf(" seq=%lu qid=%lu", static_cast<unsigned long>(extras->sequence),
+                  static_cast<unsigned long>(extras->sequence));
+  }
+  if (extras->batteryPctTimes10 >= 0) {
+    int frac = extras->batteryPctTimes10 % 10;
+    if (frac < 0) {
+      frac = -frac;
+    }
+    Serial.printf(" bat=%d.%d", extras->batteryPctTimes10 / 10, frac);
+  }
+  if (extras->batteryMv >= 0) {
+    Serial.printf(" mv=%d", extras->batteryMv);
+  }
+  if (extras->charging >= 0) {
+    Serial.printf(" chg=%d", extras->charging ? 1 : 0);
+  }
+  if (extras->queueDepth >= 0) {
+    Serial.printf(" q=%d", extras->queueDepth);
+  }
+  if (extras->lowBattery >= 0) {
+    Serial.printf(" low=%d", extras->lowBattery ? 1 : 0);
+  }
+}
 
 char gPollLine[96];
 size_t gPollLen = 0;
@@ -44,6 +84,8 @@ void resetPollAssembler() {
 }
 
 void applyTime(unsigned long epoch) {
+  // A TIME line means the bridge is on the wire, even if the stamp is rejected.
+  noteLink();
   if (epoch < 1700000000UL) {
     return;
   }
@@ -77,7 +119,9 @@ bool isKnownCommand(const char *line) {
   }
   if (strcmp(line, "hello") == 0 || strcmp(line, "capture") == 0 ||
       strcmp(line, "cooktest") == 0 || strcmp(line, "sdlist") == 0 ||
-      strcmp(line, "sdpull") == 0 || strcmp(line, "sdwipe") == 0) {
+      strcmp(line, "sdpull") == 0 || strcmp(line, "sdwipe") == 0 ||
+      strcmp(line, "bat") == 0 || strcmp(line, "queue") == 0 ||
+      strcmp(line, "sleep on") == 0 || strcmp(line, "sleep off") == 0) {
     return true;
   }
   int width = 0;
@@ -98,6 +142,7 @@ void handleLine(char *line) {
   if (strcmp(line, "hello") == 0) {
     Serial.printf("OK somnium %lu\n",
                   static_cast<unsigned long>(Defaults::kSerialBaud));
+    noteLink();
     return;
   }
 
@@ -199,6 +244,12 @@ void handleLine(char *line) {
     return;
   }
 
+  if (strcmp(line, "bat") == 0 || strcmp(line, "queue") == 0 ||
+      strcmp(line, "sleep on") == 0 || strcmp(line, "sleep off") == 0) {
+    if (gLineHook != nullptr) {
+      gLineHook(line);
+    }
+  }
 }
 
 bool readExact(uint8_t *dst, size_t len, uint32_t timeoutMs) {
@@ -323,6 +374,10 @@ bool waitDreamHeader(unsigned requestId, unsigned &dreamLen,
 
 void Host::setPump(PumpFn fn) { gPump = fn; }
 
+void Host::setOnLink(LinkFn fn) { gOnLink = fn; }
+
+void Host::setLineHook(LineFn fn) { gLineHook = fn; }
+
 void Host::poll() {
   if (gCooking) {
     return;
@@ -348,7 +403,7 @@ void Host::poll() {
 
 bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
                 const char *takenAt, float lat, float lon, JpegBuffer &outDream,
-                String *err) {
+                String *err, const CookExtras *extras) {
   outDream = JpegBuffer{};
   if (jpeg == nullptr || jpegLen == 0) {
     if (err != nullptr) {
@@ -372,6 +427,7 @@ bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
   if (!isnan(lat) && !isnan(lon)) {
     Serial.printf(" lat=%.5f lon=%.5f", lat, lon);
   }
+  appendExtras(extras);
   Serial.print("\n");
   Serial.write(jpeg, jpegLen);
   Serial.print("\nCOOK_END\n");

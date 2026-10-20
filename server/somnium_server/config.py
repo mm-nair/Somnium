@@ -116,6 +116,8 @@ def load_config() -> dict[str, Any]:
             "include_weather": context_cfg.get("include_weather", True),
             "include_astro": context_cfg.get("include_astro", True),
             "include_sun": context_cfg.get("include_sun", True),
+            # Captures older than this many minutes use the historical weather API.
+            "history_after_minutes": context_cfg.get("history_after_minutes", 90),
         },
         "creative": creative,
     }

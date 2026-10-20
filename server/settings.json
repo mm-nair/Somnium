@@ -10,7 +10,8 @@
   "context": {
     "include_weather": true,
     "include_astro": true,
-    "include_sun": true
+    "include_sun": true,
+    "history_after_minutes": 90
   },
   "prompt_api": {
     "base_url": "https://api.x.ai/v1",

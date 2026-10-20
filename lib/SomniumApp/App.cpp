@@ -6,8 +6,12 @@
 #include <Host.h>
 #include <Image.h>
 #include <Inputs.h>
+#include <OfflineSync.h>
+#include <Power.h>
+#include <ShotQueue.h>
 #include <Storage.h>
 #include <Ui.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "Brand.h"
@@ -257,7 +261,54 @@ void pumpCookUi() {
   yield();
 }
 
+void onPower(Somnium::PowerEvent event) {
+  const Somnium::BatterySample sample = Somnium::Power::last();
+  Somnium::Console::printf(
+      "POWER %s bat=%d.%d mv=%d chg=%d\n", Somnium::Power::eventName(event),
+      Somnium::Power::percentTimes10() / 10,
+      Somnium::Power::percentTimes10() >= 0 ? Somnium::Power::percentTimes10() % 10
+                                           : 0,
+      Somnium::Power::millivolts(), sample.charging ? 1 : 0);
+}
+
+void onQueue(Somnium::ShotQueue::Event event, uint32_t sequence, int depth) {
+  Somnium::Console::printf("QUEUE %s seq=%lu depth=%d\n",
+                           Somnium::ShotQueue::eventName(event),
+                           static_cast<unsigned long>(sequence), depth);
+}
+
+void onLink() {
+  Somnium::Power::noteLinkActivity();
+  Somnium::OfflineSync::noteLink();
+}
+
+void onCommand(const char *line) {
+  if (line == nullptr) {
+    return;
+  }
+  if (strcmp(line, "bat") == 0) {
+    Somnium::Power::writeStatus();
+  } else if (strcmp(line, "queue") == 0) {
+    Somnium::ShotQueue::logStatus();
+  } else if (strcmp(line, "sleep on") == 0) {
+    Somnium::Power::setSleepEnabled(true, true);
+  } else if (strcmp(line, "sleep off") == 0) {
+    Somnium::Power::setSleepEnabled(false, false);
+  }
+}
+
+void fillCookExtras(Somnium::CookExtras &extras, uint32_t sequence) {
+  extras.sequence = sequence;
+  extras.deviceId = Somnium::Power::deviceId();
+  extras.batteryPctTimes10 = Somnium::Power::percentTimes10();
+  extras.batteryMv = Somnium::Power::millivolts();
+  extras.charging = Somnium::Power::chargingFlag();
+  extras.lowBattery = Somnium::Power::lowFlag();
+  extras.queueDepth = Somnium::ShotQueue::depth();
+}
+
 void failProcess(const char *status) {
+  Somnium::Power::setBusy(false);
   Somnium::Console::printf("ERR process %s\n", status != nullptr ? status : "?");
   gProcess.setStatus(status);
   gProcess.setFailed();
@@ -291,6 +342,8 @@ void requestCapture() {
 }
 
 void runPipeline() {
+  Somnium::Power::noteActivity();
+  Somnium::Power::setBusy(true);
   Somnium::Host::setPump(pumpCookUi);
 
   if (!gCameraOk) {
@@ -312,12 +365,36 @@ void runPipeline() {
   gProcess.setStatus("usb > thinkpad...");
   pumpCookUi();
 
+  char takenAt[40];
+  const bool haveTime =
+      Somnium::ShotQueue::formatDeviceTime(takenAt, sizeof(takenAt));
+  const uint32_t sequence = Somnium::ShotQueue::allocateSequence();
+  Somnium::CookExtras extras;
+  fillCookExtras(extras, sequence);
+
   Somnium::JpegBuffer dream{};
   String bridgeErr;
   if (!Somnium::Host::cook(photo.data, photo.length, gMode.selected().id,
-                           nullptr, Somnium::Defaults::kVenueLat,
-                           Somnium::Defaults::kVenueLon, dream, &bridgeErr)) {
+                           haveTime ? takenAt : nullptr,
+                           Somnium::Defaults::kVenueLat,
+                           Somnium::Defaults::kVenueLon, dream, &bridgeErr,
+                           &extras)) {
     Somnium::Console::printf("ERR bridge %s\n", bridgeErr.c_str());
+    Somnium::QueuedShot queued;
+    clearQueuedShot(queued);
+    queued.sequence = sequence;
+    strncpy(queued.style, gMode.selected().id, sizeof(queued.style) - 1);
+    if (haveTime) {
+      strncpy(queued.takenAt, takenAt, sizeof(queued.takenAt) - 1);
+    }
+    queued.batteryPctTimes10 = extras.batteryPctTimes10;
+    queued.batteryMv = extras.batteryMv;
+    queued.charging = extras.charging;
+    if (Somnium::ShotQueue::enqueue(queued, photo.data, photo.length)) {
+      Somnium::Image::freePhoto(photo);
+      failProcess("queued offline");
+      return;
+    }
     Somnium::Image::freePhoto(photo);
     char buf[40];
     snprintf(buf, sizeof(buf), "%s", bridgeErr.c_str());
@@ -338,6 +415,7 @@ void runPipeline() {
   gResultLen = dream.length;
   dream.data = nullptr;
   Somnium::Host::setPump(nullptr);
+  Somnium::Power::setBusy(false);
   // Next shutter re-inits the sensor via Camera::captureJpeg.
   showReview();
   Somnium::Console::println("UI review");
@@ -346,6 +424,7 @@ void runPipeline() {
 void mapInputs() {
   Somnium::InputEvent ev = Somnium::Inputs::pollEvent();
   while (ev != Somnium::InputEvent::None) {
+    Somnium::Power::noteActivity();
     switch (ev) {
       case Somnium::InputEvent::EncoderTurned:
         if (gScreen == Screen::Mode) {
@@ -414,6 +493,14 @@ void Runtime::begin(bool cameraOk) {
   Somnium::Ui::Ui::begin();
   Somnium::Ui::Ui::push(&gBoot, Somnium::Ui::Transition::None);
   gScreen = Screen::Boot;
+  Somnium::Power::setListener(onPower);
+  Somnium::Power::setQueueDepth(Somnium::ShotQueue::depth);
+  Somnium::Power::setLastSequence(Somnium::ShotQueue::lastSequence);
+  Somnium::ShotQueue::setListener(onQueue);
+  Somnium::OfflineSync::begin();
+  Somnium::OfflineSync::setPump(pumpCookUi);
+  Somnium::Host::setOnLink(onLink);
+  Somnium::Host::setLineHook(onCommand);
 }
 
 void Runtime::tick() {
@@ -424,6 +511,10 @@ void Runtime::tick() {
   if (gScreen == Screen::Boot && gBoot.finished() &&
       !Somnium::Ui::Ui::navigator().busy()) {
     showMode();
+    // Deep-sleep wake on the shutter is a shot, not a trip through Modes.
+    if (Somnium::Power::consumeWakeShutter()) {
+      requestCapture();
+    }
   }
 
   // Mode-page flags unused for shutter/storage now (handled in mapInputs),
@@ -463,6 +554,11 @@ void Runtime::tick() {
   }
 
   Somnium::Ui::Ui::tick();
+  Somnium::Power::setIdle(gScreen == Screen::Mode);
+  if (gScreen == Screen::Mode && !gAwaitProcessWork) {
+    Somnium::OfflineSync::tick();
+  }
+  Somnium::Power::tick();
 }
 
 }  // namespace App

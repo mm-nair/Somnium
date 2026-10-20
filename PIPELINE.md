@@ -25,7 +25,7 @@ JPEG + style  (USB COOK from ESP)
 ESP → laptop:
 
 ```
-COOK style=<style> len=<n> id=<request> crc=<crc32> lat=… lon=…
+COOK style=<style> len=<n> id=<request> crc=<crc32> lat=… lon=… [taken_at=… dev=… seq=… bat=…]
 <n jpeg bytes>
 COOK_END
 ```
@@ -82,7 +82,7 @@ nix develop -c python -m unittest discover -s tests -p 'test_*.py' -v
 
 ## HTTP (laptop local)
 
-`POST /v1/process` multipart: `image`, `style`, `taken_at`, optional `lat`/`lon`.
+`POST /v1/process` multipart: `image`, `style`, `taken_at`, optional `lat`/`lon`, and optional late-upload fields `device_id`, `sequence_id`, `queue_id`, `battery_pct`, `battery_mv`, `charging`, `queue_depth`, `low_battery`. A repeated device + sequence returns the stored dream (`X-Somnium-Idempotent: replay`). Context for an old `taken_at` uses historical weather. `GET /api/device/status` is the battery and queue hook. See [docs/power-and-offline.md](docs/power-and-offline.md).
 
 Response: JPEG + headers `X-Somnium-Prompt`, `X-Somnium-Context`, …
 

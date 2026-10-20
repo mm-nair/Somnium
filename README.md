@@ -117,7 +117,7 @@ nix develop -c pio run
 nix develop -c python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-Wire format: [PIPELINE.md](https://github.com/mm-nair/Somnium/blob/main/PIPELINE.md). Editing modes and prompts: [creative/README.md](https://github.com/mm-nair/Somnium/blob/main/creative/README.md).
+Wire format: [PIPELINE.md](https://github.com/mm-nair/Somnium/blob/main/PIPELINE.md). Editing modes and prompts: [creative/README.md](https://github.com/mm-nair/Somnium/blob/main/creative/README.md). Battery sleep and the offline shot queue: [docs/power-and-offline.md](docs/power-and-offline.md).
 
 ## Built with
 

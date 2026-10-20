@@ -51,6 +51,13 @@ class Pipeline:
         lat: float | None = None,
         lon: float | None = None,
         force_real: bool = False,
+        device_id: str | None = None,
+        sequence_id: str | None = None,
+        queue_id: str | None = None,
+        battery_pct: float | None = None,
+        battery_mv: int | None = None,
+        charging: int | None = None,
+        queue_depth: int | None = None,
     ) -> ProcessResult:
         styles = self.cfg.get("styles") or {}
         if style_id not in styles:
@@ -124,21 +131,35 @@ class Pipeline:
         # Dual slideshow on the ThinkPad: …_0_orig then …_1_dream.
         orig_path.write_bytes(image)
         dream_path.write_bytes(result_image)
-        meta_path.write_text(
-            json.dumps(
-                {
-                    "style_id": style_id,
-                    "prompt": prompt,
-                    "context": context,
-                    "taken_at": taken_at or context.get("taken_at"),
-                    "files": {
-                        "orig": orig_path.name,
-                        "dream": dream_path.name,
-                    },
-                },
-                indent=2,
-            )
-        )
+        sidecar: dict[str, Any] = {
+            "style_id": style_id,
+            "prompt": prompt,
+            "context": context,
+            "taken_at": taken_at or context.get("taken_at"),
+            "files": {
+                "orig": orig_path.name,
+                "dream": dream_path.name,
+            },
+        }
+        if device_id or sequence_id or queue_id:
+            sidecar["capture"] = {
+                "device_id": device_id,
+                "sequence_id": sequence_id,
+                "queue_id": queue_id,
+            }
+        battery: dict[str, Any] = {}
+        if battery_pct is not None:
+            battery["percent"] = battery_pct
+        if battery_mv is not None:
+            battery["millivolts"] = battery_mv
+            battery["volts"] = round(battery_mv / 1000.0, 3)
+        if charging is not None:
+            battery["charging"] = bool(charging)
+        if queue_depth is not None:
+            battery["queue_depth"] = queue_depth
+        if battery:
+            sidecar["battery"] = battery
+        meta_path.write_text(json.dumps(sidecar, indent=2))
         # Optional gallery upload. Must not delay or fail the shot.
         _start_gallery_upload(
             orig_path=orig_path,
