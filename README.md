@@ -49,6 +49,14 @@ Two things that made the transfer reliable: the serial receive buffer is 64 KB, 
 
 The same port still takes operator commands: `hello`, `capture`, `cooktest`, `sdlist`, `sdpull`, `sdwipe`, and `TIME <epoch>` to set the clock.
 
+## Phone link
+
+With `SOMNIUM_BLE=1` (the default in `platformio.ini`) the board also advertises as **Somnium** over Bluetooth LE. A phone can list the style presets, switch the selected one, press the shutter, and subscribe to status. When a dream comes back over USB, the camera notifies and then sends a 40×30 RGB565 preview in framed chunks.
+
+The phone does not replace the laptop. Shutter and style writes are posted into the same input queue as the button and the dial, and the cook is still the USB `COOK` / `DREAM` exchange. BLE never writes that serial port. Set `-DSOMNIUM_BLE=0` for a USB-only build.
+
+The radio stack is NimBLE-Arduino 1.4.3 rather than Bluedroid: this core is Arduino-ESP32 2.0.17, and NimBLE keeps the host smaller in flash and RAM and can put host buffers in PSRAM, next to the JPEG buffers. The GATT layout, the chunk framing, and the Chrome companion page are in [tools/ble/README.md](tools/ble/README.md).
+
 ## Photo processing
 
 The server is a FastAPI app with one endpoint, `POST /v1/process`. The body is multipart: `image`, `style`, `taken_at`, and optional `lat` / `lon`. The response body is the edited JPEG. Headers carry the style, a short prompt preview, and the filenames that were saved.

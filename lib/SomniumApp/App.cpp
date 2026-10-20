@@ -1,5 +1,6 @@
 #include "App.h"
 
+#include <Ble.h>
 #include <Camera.h>
 #include <Config.h>
 #include <Console.h>
@@ -225,6 +226,72 @@ bool loadStorageIndex(int index0) {
   return true;
 }
 
+void syncBle() {
+  Somnium::BleProto::Status status{};
+  switch (gScreen) {
+    case Screen::Boot:
+      status.screen = Somnium::BleProto::kScreenBoot;
+      break;
+    case Screen::Mode:
+      status.screen = Somnium::BleProto::kScreenMode;
+      break;
+    case Screen::Process:
+      status.screen = Somnium::BleProto::kScreenProcess;
+      break;
+    case Screen::Review:
+      status.screen = Somnium::BleProto::kScreenReview;
+      break;
+    case Screen::Storage:
+      status.screen = Somnium::BleProto::kScreenStorage;
+      break;
+  }
+  status.modeIndex = static_cast<uint8_t>(gMode.selectedIndex());
+  const bool cooking = gScreen == Screen::Process && !gProcessHolding;
+  if (cooking) {
+    status.flags =
+        static_cast<uint8_t>(status.flags | Somnium::BleProto::kFlagBusy);
+  }
+  if (gProcessHolding) {
+    status.flags =
+        static_cast<uint8_t>(status.flags | Somnium::BleProto::kFlagFailed);
+  }
+  if (Somnium::Storage::ready()) {
+    status.flags =
+        static_cast<uint8_t>(status.flags | Somnium::BleProto::kFlagSd);
+    status.sdCount =
+        static_cast<uint16_t>(Somnium::Storage::photoCount());
+  }
+  if (gCameraOk) {
+    status.flags =
+        static_cast<uint8_t>(status.flags | Somnium::BleProto::kFlagCamera);
+  }
+  if (gScreen == Screen::Review && gResultJpeg != nullptr && gResultLen > 0) {
+    status.flags =
+        static_cast<uint8_t>(status.flags | Somnium::BleProto::kFlagDream);
+  }
+  status.ramCount = static_cast<uint16_t>(gGalCount);
+  status.batteryPct = Somnium::BleProto::kBatteryAbsent;
+  uint8_t gate = 0;
+  if (gScreen == Screen::Process) {
+    gate = static_cast<uint8_t>(gate | Somnium::Ble::kGateProcess);
+  }
+  if (cooking) {
+    gate = static_cast<uint8_t>(gate | Somnium::Ble::kGateCooking);
+  }
+  Somnium::Ble::setGate(gate);
+  Somnium::Ble::setStatus(status);
+}
+
+void publishModes() {
+  Somnium::Ble::ModeEntry entries[kModeCount];
+  for (int i = 0; i < kModeCount; ++i) {
+    memset(&entries[i], 0, sizeof(entries[i]));
+    strncpy(entries[i].id, kModes[i].id, sizeof(entries[i].id) - 1);
+    strncpy(entries[i].label, kModes[i].label, sizeof(entries[i].label) - 1);
+  }
+  Somnium::Ble::setModes(entries, static_cast<uint8_t>(kModeCount));
+}
+
 void showMode() {
   gScreen = Screen::Mode;
   gAwaitProcessWork = false;
@@ -264,6 +331,9 @@ void failProcess(const char *status) {
   Somnium::Host::setPump(nullptr);
   gAwaitProcessWork = false;
   gProcessHolding = true;
+  Somnium::Ble::noteDreamFailed(
+      static_cast<uint8_t>(gMode.selectedIndex()));
+  syncBle();
 }
 
 void showStorage() {
@@ -340,6 +410,11 @@ void runPipeline() {
   Somnium::Host::setPump(nullptr);
   // Next shutter re-inits the sensor via Camera::captureJpeg.
   showReview();
+  // Dream notify + thumbnail are armed after the USB ACK, never during
+  // the binary transfer. decodeRgb565 reuses TJpg_Decoder.
+  Somnium::Ble::offerDream(gResultJpeg, gResultLen,
+                           static_cast<uint8_t>(gMode.selectedIndex()));
+  syncBle();
   Somnium::Console::println("UI review");
 }
 
@@ -362,11 +437,35 @@ void mapInputs() {
 
       case Somnium::InputEvent::ShutterReleased:
         // Shutter is ONLY "take a picture" — never navigation.
+        // Physical button and BLE post the same release edge.
         if (gScreen == Screen::Mode || gScreen == Screen::Storage ||
             gScreen == Screen::Review) {
           requestCapture();
         }
         break;
+
+      case Somnium::InputEvent::ModeRequested: {
+        // Style changes go through ModePage, including while Storage or
+        // Review is up. Cooking ignores them so the in-flight cook keeps
+        // the style it already started with.
+        if (gScreen == Screen::Process && !gProcessHolding) {
+          break;
+        }
+        const int requested = Somnium::Inputs::lastModeRequest();
+        if (requested < 0 || requested >= kModeCount) {
+          break;
+        }
+        if (gScreen == Screen::Mode) {
+          const int current = gMode.selectedIndex();
+          const int forward = (requested - current + kModeCount) % kModeCount;
+          const int backward = forward - kModeCount;
+          const int delta = forward <= -backward ? forward : backward;
+          gMode.nudge(delta);
+        } else {
+          gMode.selectIndex(requested);
+        }
+        break;
+      }
 
       case Somnium::InputEvent::EncoderPressed:
         // Dismiss stuck screens on press (don't wait for release).
@@ -414,6 +513,9 @@ void Runtime::begin(bool cameraOk) {
   Somnium::Ui::Ui::begin();
   Somnium::Ui::Ui::push(&gBoot, Somnium::Ui::Transition::None);
   gScreen = Screen::Boot;
+  publishModes();
+  syncBle();
+  Somnium::Ble::poll();
 }
 
 void Runtime::tick() {
@@ -462,6 +564,8 @@ void Runtime::tick() {
     }
   }
 
+  syncBle();
+  Somnium::Ble::poll();
   Somnium::Ui::Ui::tick();
 }
 

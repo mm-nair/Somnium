@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Ble.h"
 #include "Camera.h"
 #include "Config.h"
 #include "Console.h"
@@ -21,6 +22,11 @@ inline bool begin() {
   Console::println("storage");
   const bool cameraOk = Camera::begin(Defaults::kCameraWidth);
   Console::println(cameraOk ? "camera ok" : "camera fail");
+  // After the camera so a BLE init failure still leaves USB cook alive.
+  // BLE never writes this UART; the cook frames below stay exclusive.
+  Ble::begin();
+  Console::println(Ble::active() ? "ble ok"
+                                 : (Ble::compiled() ? "ble fail" : "ble off"));
   Console::println("READY usb-cook");
   return cameraOk;
 }

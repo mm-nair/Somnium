@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Somnium</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #000;
+      --surface: #140c12;
+      --panel: #24141e;
+      --pink: #ff69b4;
+      --pink-dim: #c8508c;
+      --muted: #8c6e7d;
+      --text: #f6e8ef;
+      --danger: #dc5050;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.4 ui-sans-serif, system-ui, sans-serif;
+    }
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 28px 20px 48px;
+    }
+    h1 {
+      margin: 0;
+      font-weight: 560;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--pink);
+    }
+    .tag {
+      color: var(--muted);
+      margin: 4px 0 22px;
+    }
+    button, .ghost {
+      border: 1px solid var(--pink-dim);
+      background: var(--surface);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 10px 16px;
+      font: inherit;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--pink); }
+    button:disabled { opacity: 0.4; cursor: default; }
+    button.primary, button.shutter {
+      background: var(--pink);
+      color: #1a0610;
+      border-color: var(--pink);
+      font-weight: 650;
+    }
+    button.on {
+      background: var(--pink);
+      color: #1a0610;
+      border-color: var(--pink);
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .modes { margin: 18px 0; }
+    .status {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+      margin: 18px 0;
+    }
+    .status div {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 10px 12px;
+    }
+    .status span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .preview-wrap {
+      background: var(--panel);
+      border-radius: 16px;
+      padding: 12px;
+      min-height: 180px;
+    }
+    canvas {
+      width: 100%;
+      height: auto;
+      image-rendering: pixelated;
+      background: #000;
+      border-radius: 8px;
+    }
+    .log {
+      margin-top: 16px;
+      color: var(--muted);
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+    .warn { color: var(--danger); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Somnium</h1>
+    <p class="tag">Phone link. The laptop still cooks the JPEG over USB.</p>
+    <div class="row">
+      <button id="connect" class="primary" type="button">Connect</button>
+      <button id="shutter" class="shutter" type="button" disabled>Shutter</button>
+      <span id="link" class="tag"></span>
+    </div>
+    <div id="modes" class="modes row"></div>
+    <section class="status" id="status"></section>
+    <div class="preview-wrap">
+      <canvas id="preview" width="320" height="240"></canvas>
+    </div>
+    <div id="log" class="log"></div>
+  </main>
+  <script>
+    const SERVICE = "534f4d4e-1000-4000-8000-534f4d4e494d";
+    const MODES = "534f4d4e-1001-4000-8000-534f4d4e494d";
+    const MODE_SELECT = "534f4d4e-1002-4000-8000-534f4d4e494d";
+    const SHUTTER = "534f4d4e-1003-4000-8000-534f4d4e494d";
+    const STATUS = "534f4d4e-1004-4000-8000-534f4d4e494d";
+    const DREAM = "534f4d4e-1005-4000-8000-534f4d4e494d";
+    const PREVIEW = "534f4d4e-1006-4000-8000-534f4d4e494d";
+
+    const SCREENS = ["boot", "mode", "process", "review", "storage"];
+    const FALLBACK = [
+      ["popcomic", "COMIC"],
+      ["watercolor", "WATERCOLOR"],
+      ["anime", "ANIME"],
+      ["surprise", "SURPRISE"],
+      ["pencil", "PENCIL SKETCH"],
+    ];
+
+    const connectBtn = document.getElementById("connect");
+    const shutterBtn = document.getElementById("shutter");
+    const modesEl = document.getElementById("modes");
+    const statusEl = document.getElementById("status");
+    const logEl = document.getElementById("log");
+    const linkEl = document.getElementById("link");
+    const canvas = document.getElementById("preview");
+
+    let device = null;
+    let chars = {};
+    let modeList = FALLBACK.map(([id, label], index) => ({ index, id, label }));
+    let selected = 0;
+    let assembler = freshAssembler();
+
+    function log(line) {
+      logEl.textContent = (line + "\n" + logEl.textContent).slice(0, 1200);
+    }
+
+    function u16(buf, offset) {
+      return buf[offset] | (buf[offset + 1] << 8);
+    }
+    function u32(buf, offset) {
+      return (buf[offset] | (buf[offset + 1] << 8) |
+        (buf[offset + 2] << 16) | (buf[offset + 3] << 24)) >>> 0;
+    }
+    function bytesOf(view) {
+      return new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+    }
+
+    function freshAssembler() {
+      return { expected: 0, meta: null, buffer: [] };
+    }
+
+    function renderModes() {
+      modesEl.replaceChildren();
+      modeList.forEach((mode) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = mode.label;
+        if (mode.index === selected) button.classList.add("on");
+        button.disabled = !chars.modeSelect;
+        button.addEventListener("click", () => selectMode(mode));
+        modesEl.appendChild(button);
+      });
+    }
+
+    function renderStatus(status) {
+      const battery = status.batteryPct == null ? "no gauge" : status.batteryPct + "%";
+      const cells = [
+        ["Screen", status.screenName],
+        ["Style", modeList[status.modeIndex] ? modeList[status.modeIndex].label : String(status.modeIndex)],
+        ["State", status.busy ? "cooking" : (status.failed ? "failed" : "idle")],
+        ["Camera", status.cameraOk ? "ok" : "no"],
+        ["SD", status.sdReady ? String(status.sdCount) + " photos" : "no card"],
+        ["RAM gallery", String(status.ramCount)],
+        ["Dream", status.dreamReady ? "ready" : "—"],
+        ["Battery", battery],
+      ];
+      statusEl.replaceChildren();
+      cells.forEach(([name, value]) => {
+        const cell = document.createElement("div");
+        const span = document.createElement("span");
+        span.textContent = name;
+        cell.append(span, document.createTextNode(value));
+        statusEl.appendChild(cell);
+      });
+    }
+
+    function unpackStatus(buf) {
+      if (buf.length < 10 || buf[0] !== 1) throw new Error("status");
+      const flags = buf[3];
+      const battery = buf[8];
+      return {
+        screen: buf[1],
+        screenName: SCREENS[buf[1]] || ("screen " + buf[1]),
+        modeIndex: buf[2],
+        busy: (flags & 1) !== 0,
+        failed: (flags & 2) !== 0,
+        sdReady: (flags & 4) !== 0,
+        cameraOk: (flags & 8) !== 0,
+        dreamReady: (flags & 16) !== 0,
+        sdCount: u16(buf, 4),
+        ramCount: u16(buf, 6),
+        batteryPct: battery === 0xff ? null : battery,
+      };
+    }
+
+    function unpackModes(buf) {
+      if (buf.length === 1 && buf[0] === 0x01) return { updated: true };
+      if (buf.length < 2) throw new Error("modes");
+      const selectedIndex = buf[0];
+      const count = buf[1];
+      const modes = [];
+      let at = 2;
+      for (let i = 0; i < count; i++) {
+        const index = buf[at];
+        const idLen = buf[at + 1];
+        at += 2;
+        const id = new TextDecoder().decode(buf.slice(at, at + idLen));
+        at += idLen;
+        const labelLen = buf[at];
+        at += 1;
+        const label = new TextDecoder().decode(buf.slice(at, at + labelLen));
+        at += labelLen;
+        modes.push({ index, id, label });
+      }
+      return { updated: false, selected: selectedIndex, modes };
+    }
+
+    function unpackDream(buf) {
+      if (buf.length < 20) throw new Error("dream");
+      const state = buf[0];
+      return {
+        state,
+        name: ["idle", "ready", "failed"][state] || "unknown",
+        modeIndex: buf[1],
+        dreamBytes: u32(buf, 2),
+        width: u16(buf, 6),
+        height: u16(buf, 8),
+        format: buf[10],
+        thumbBytes: u32(buf, 12),
+        generation: u16(buf, 16),
+      };
+    }
+
+    function pushChunk(buf) {
+      if (buf.length < 5) return;
+      const flags = buf[0];
+      const sequence = u16(buf, 1);
+      const payloadLen = u16(buf, 3);
+      if (5 + payloadLen !== buf.length) return;
+      const payload = buf.slice(5);
+      if (flags & 0x80) {
+        assembler = freshAssembler();
+        return;
+      }
+      if (sequence !== assembler.expected) {
+        assembler = freshAssembler();
+        if ((flags & 0x01) === 0) return;
+      }
+      let image = payload;
+      if (flags & 0x01) {
+        if (payload.length < 9) return;
+        assembler = {
+          expected: 1,
+          meta: {
+            total: u32(payload, 0),
+            width: u16(payload, 4),
+            height: u16(payload, 6),
+            format: payload[8],
+          },
+          buffer: Array.from(payload.slice(9)),
+        };
+      } else {
+        assembler.buffer.push(...image);
+        assembler.expected = sequence + 1;
+      }
+      if (flags & 0x02) {
+        const got = new Uint8Array(assembler.buffer);
+        const meta = assembler.meta;
+        assembler = freshAssembler();
+        if (meta && got.length === meta.total) drawPreview(got, meta.width, meta.height);
+      }
+    }
+
+    function drawPreview(rgb565, width, height) {
+      const scale = Math.max(1, Math.floor(320 / width));
+      const small = document.createElement("canvas");
+      small.width = width;
+      small.height = height;
+      const src = small.getContext("2d");
+      const image = src.createImageData(width, height);
+      for (let i = 0; i < width * height; i++) {
+        const pixel = rgb565[i * 2] | (rgb565[i * 2 + 1] << 8);
+        const r = (pixel >> 11) & 31;
+        const g = (pixel >> 5) & 63;
+        const b = pixel & 31;
+        image.data[i * 4] = (r * 255) / 31;
+        image.data[i * 4 + 1] = (g * 255) / 63;
+        image.data[i * 4 + 2] = (b * 255) / 31;
+        image.data[i * 4 + 3] = 255;
+      }
+      src.putImageData(image, 0, 0);
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      const ctx = canvas.getContext("2d");
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(small, 0, 0, canvas.width, canvas.height);
+    }
+
+    async function selectMode(mode) {
+      if (!chars.modeSelect) return;
+      const id = new TextEncoder().encode(mode.id);
+      await chars.modeSelect.writeValueWithResponse(id);
+      log("mode " + mode.id);
+    }
+
+    async function readModes() {
+      const parsed = unpackModes(bytesOf(await chars.modes.readValue()));
+      if (!parsed.updated) {
+        modeList = parsed.modes;
+        selected = parsed.selected;
+        renderModes();
+      }
+    }
+
+    function onNotify(kind) {
+      return async (event) => {
+        const buf = bytesOf(event.target.value);
+        try {
+          if (kind === "status") {
+            const status = unpackStatus(buf);
+            selected = status.modeIndex;
+            renderStatus(status);
+            renderModes();
+          } else if (kind === "modes") {
+            const parsed = unpackModes(buf);
+            if (parsed.updated) {
+              await readModes();
+            } else {
+              modeList = parsed.modes;
+              selected = parsed.selected;
+              renderModes();
+            }
+          } else if (kind === "dream") {
+            const dream = unpackDream(buf);
+            assembler = freshAssembler();
+            log("dream " + dream.name + " gen " + dream.generation +
+              " jpeg " + dream.dreamBytes + " B");
+          } else if (kind === "preview") {
+            pushChunk(buf);
+          }
+        } catch (error) {
+          log(String(error));
+        }
+      };
+    }
+
+    async function subscribe(chr, kind) {
+      chr.addEventListener("characteristicvaluechanged", onNotify(kind));
+      await chr.startNotifications();
+    }
+
+    async function connect() {
+      if (!navigator.bluetooth) {
+        log("This browser has no Web Bluetooth. Use Chrome on a computer or Android, or tools/ble/companion.py.");
+        return;
+      }
+      connectBtn.disabled = true;
+      try {
+        device = await navigator.bluetooth.requestDevice({
+          filters: [{ name: "Somnium" }, { services: [SERVICE] }],
+          optionalServices: [SERVICE],
+        });
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE);
+        chars = {
+          modes: await service.getCharacteristic(MODES),
+          modeSelect: await service.getCharacteristic(MODE_SELECT),
+          shutter: await service.getCharacteristic(SHUTTER),
+          status: await service.getCharacteristic(STATUS),
+          dream: await service.getCharacteristic(DREAM),
+          preview: await service.getCharacteristic(PREVIEW),
+        };
+        await subscribe(chars.status, "status");
+        await subscribe(chars.modes, "modes");
+        await subscribe(chars.dream, "dream");
+        await subscribe(chars.preview, "preview");
+        await readModes();
+        onNotify("status")({ target: { value: await chars.status.readValue() } });
+        onNotify("dream")({ target: { value: await chars.dream.readValue() } });
+        shutterBtn.disabled = false;
+        linkEl.textContent = device.name || "Somnium";
+        connectBtn.textContent = "Connected";
+        device.addEventListener("gattserverdisconnected", () => {
+          chars = {};
+          shutterBtn.disabled = true;
+          connectBtn.disabled = false;
+          connectBtn.textContent = "Connect";
+          linkEl.textContent = "disconnected";
+          renderModes();
+          log("disconnected");
+        });
+        log("connected");
+      } catch (error) {
+        connectBtn.disabled = false;
+        log(error.message || String(error));
+      }
+    }
+
+    connectBtn.addEventListener("click", connect);
+    shutterBtn.addEventListener("click", async () => {
+      if (!chars.shutter) return;
+      await chars.shutter.writeValueWithResponse(new Uint8Array([1]));
+      log("shutter");
+    });
+
+    renderModes();
+    renderStatus({
+      screenName: "—",
+      modeIndex: 0,
+      busy: false,
+      failed: false,
+      sdReady: false,
+      cameraOk: false,
+      dreamReady: false,
+      sdCount: 0,
+      ramCount: 0,
+      batteryPct: null,
+    });
+    if (!navigator.bluetooth) {
+      logEl.classList.add("warn");
+      log("Web Bluetooth is unavailable here. Chrome (desktop or Android) can open this file. Elsewhere: python tools/ble/companion.py");
+    }
+  </script>
+</body>
+</html>

@@ -35,6 +35,9 @@ class ModePage : public Somnium::Ui::Page {
   void clearOpenStorage() { openStorage_ = false; }
 
   void nudge(int delta);
+  // Snap to a style. Used when the carousel is not on screen; the mode
+  // screen itself animates through nudge so the slide tween still runs.
+  void selectIndex(int index);
 
  private:
   void drawHeaderOnly(Somnium::Ui::Canvas &c);
