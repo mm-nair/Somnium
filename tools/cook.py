@@ -25,6 +25,16 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def http_base_from_env() -> str:
+    raw = os.environ.get("SOMNIUM_SERVER_URL", "").strip().rstrip("/")
+    if not raw:
+        return "http://127.0.0.1:8080"
+    suffix = "/v1/process"
+    if raw.endswith(suffix):
+        raw = raw[: -len(suffix)]
+    return raw or "http://127.0.0.1:8080"
+
+
 def _to_jpeg(raw: bytes) -> bytes:
     if raw[:2] == b"\xff\xd8":
         return raw
@@ -233,12 +243,7 @@ def main() -> int:
         return 1
 
     taken_at = args.taken_at or _iso_now()
-    base_url = args.http
-    if not base_url:
-        raw = os.environ.get("SOMNIUM_SERVER_URL", "").strip().rstrip("/")
-        if raw.endswith("/v1/process"):
-            raw = raw[: -len("/v1/process")]
-        base_url = raw or "http://127.0.0.1:8080"
+    base_url = args.http or http_base_from_env()
     out_dir = args.out_dir if args.out_dir.is_absolute() else ROOT / args.out_dir
     force_real = args.force_real or True
     rc = 0

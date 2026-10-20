@@ -1,6 +1,7 @@
 #include "Link.h"
 
 #include <string.h>
+#include <time.h>
 
 #include <ESPmDNS.h>
 #include <WiFi.h>
@@ -113,7 +114,17 @@ void acceptClients() {
 }
 
 int portAvailable(void *ctx) {
-  return static_cast<WiFiClient *>(ctx)->available();
+  auto *client = static_cast<WiFiClient *>(ctx);
+  const int ready = client->available();
+  if (ready > 0) {
+    return ready;
+  }
+  // Buffered bytes still belong to the cook. A dead socket with nothing
+  // left should fail the wait instead of sitting until kCookTimeoutMs.
+  if (!client->connected()) {
+    return -1;
+  }
+  return 0;
 }
 
 int portRead(void *ctx) { return static_cast<WiFiClient *>(ctx)->read(); }
@@ -179,11 +190,17 @@ void pollWifi() {
     if (!gBusy && millis() - gLastBegin > 15000) {
       gLastBegin = millis();
       WiFi.disconnect(false, false);
+      delay(100);
       WiFi.setHostname(Defaults::kLinkHostname);
       WiFi.begin(SOMNIUM_WIFI_SSID, SOMNIUM_WIFI_PASSWORD);
       Console::println("WIFI retry");
     }
     return;
+  }
+  if (!gWasConnected) {
+    // Certificate checks need a real clock. Direct HTTPS also waits, but
+    // starting SNTP as soon as the radio associates overlaps the wait.
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov", "time.google.com");
   }
   gWasConnected = true;
   startServices();

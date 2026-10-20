@@ -6,14 +6,17 @@
 
 #include <esp_rom_crc.h>
 #include <esp_system.h>
+#include <lwip/sockets.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "Config.h"
 #include "Console.h"
 #include "Image.h"
+#include "PublicRoots.h"
 
 #if __has_include("server_config.h")
 #include "server_config.h"
@@ -119,21 +122,81 @@ bool parseHttpUrl(const char *url, ParsedUrl &out) {
   return true;
 }
 
-bool connectTo(Net &net, const char *host, int port, bool tls) {
+uint32_t remainingMs(unsigned long deadline) {
+  const unsigned long now = millis();
+  if (static_cast<int32_t>(deadline - now) <= 0) {
+    return 0;
+  }
+  return static_cast<uint32_t>(deadline - now);
+}
+
+// Keep a quiet cook alive across a home NAT. The TLS stack also copies the
+// connect timeout into SO_RCVTIMEO; a 20s receive timeout aborts a cook that
+// sits silent while xAI works, so stretch it to the board budget.
+void tuneLongWait(int fd, uint32_t recvTimeoutMs) {
+  if (fd < 0) {
+    return;
+  }
+  const int yes = 1;
+  const int idle = 15;
+  const int interval = 5;
+  const int probes = 3;
+  setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &yes, sizeof(yes));
+  setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle));
+  setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(interval));
+  setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &probes, sizeof(probes));
+  struct timeval tv;
+  const uint32_t capped = recvTimeoutMs < 1000 ? 1000 : recvTimeoutMs;
+  tv.tv_sec = static_cast<time_t>(capped / 1000);
+  tv.tv_usec = static_cast<long>((capped % 1000) * 1000);
+  setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+}
+
+bool clockReady() { return time(nullptr) > 1700000000; }
+
+bool ensureClock(void (*pump)(), unsigned long deadline) {
+  if (clockReady()) {
+    return true;
+  }
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov", "time.google.com");
+  const unsigned long cap = millis() + 15000;
+  while (remainingMs(deadline) > 0 && remainingMs(cap) > 0) {
+    if (clockReady()) {
+      return true;
+    }
+    if (pump != nullptr) {
+      pump();
+    } else {
+      yield();
+    }
+    delay(50);
+  }
+  return clockReady();
+}
+
+bool connectTo(Net &net, const char *host, int port, bool tls, int connectMs,
+                uint32_t recvTimeoutMs) {
   net.active = nullptr;
+  if (connectMs < 1000) {
+    return false;
+  }
   if (tls) {
-    // Public hosts (Fly) present a normal web certificate. The board does
-    // not ship a CA store; setInsecure still encrypts the POST.
-    net.secure.setInsecure();
-    net.secure.setHandshakeTimeout(20000);
-    net.secure.setTimeout(15);
+    // Let's Encrypt (Caddy on the VM, and the gallery host). setHandshakeTimeout
+    // is in seconds. The third connect() argument is the TCP connect budget
+    // in milliseconds and is what the stack stores as the socket timeout.
+    net.secure.setCACert(kPublicRoots);
+    net.secure.setHandshakeTimeout(20);
     net.active = &net.secure;
   } else {
-    net.plain.setTimeout(15);
     net.active = &net.plain;
   }
-  const int ok = net.active->connect(host, static_cast<uint16_t>(port), 20000);
-  return ok == 1;
+  const int ok = net.active->connect(host, static_cast<uint16_t>(port), connectMs);
+  if (ok != 1) {
+    return false;
+  }
+  tuneLongWait(tls ? net.secure.fd() : net.plain.fd(), recvTimeoutMs);
+  return true;
 }
 
 bool writeAll(WiFiClient &client, const uint8_t *data, size_t length) {
@@ -160,16 +223,16 @@ void setErr(String *err, const char *message) {
 }
 
 bool readHeaders(WiFiClient &client, int &status, size_t &contentLength, bool &haveLength,
-                 uint32_t timeoutMs, void (*pump)()) {
+                 bool &chunked, unsigned long deadline, void (*pump)()) {
   char line[384];
   size_t n = 0;
   bool first = true;
   haveLength = false;
+  chunked = false;
   contentLength = 0;
   status = 0;
-  const unsigned long started = millis();
-  unsigned long lastPump = started;
-  while (millis() - started < timeoutMs) {
+  unsigned long lastPump = millis();
+  while (remainingMs(deadline) > 0) {
     if (client.available() <= 0) {
       if (!client.connected()) {
         return false;
@@ -231,15 +294,16 @@ bool readHeaders(WiFiClient &client, int &status, size_t &contentLength, bool &h
     if (strcmp(line, "content-length") == 0) {
       contentLength = static_cast<size_t>(strtoul(value, nullptr, 10));
       haveLength = true;
+    } else if (strcmp(line, "transfer-encoding") == 0 && strstr(value, "chunked") != nullptr) {
+      chunked = true;
     }
   }
   return false;
 }
 
-bool readExact(WiFiClient &client, uint8_t *dst, size_t length, uint32_t timeoutMs) {
+bool readExact(WiFiClient &client, uint8_t *dst, size_t length, unsigned long deadline) {
   size_t got = 0;
-  const unsigned long started = millis();
-  while (got < length && millis() - started < timeoutMs) {
+  while (got < length && remainingMs(deadline) > 0) {
     if (client.available() <= 0) {
       if (!client.connected()) {
         break;
@@ -259,14 +323,20 @@ bool readExact(WiFiClient &client, uint8_t *dst, size_t length, uint32_t timeout
 }
 
 bool exchange(Net &net, const HttpTarget &target, const HttpPart *parts, size_t count,
-              bool wantBody, size_t maxBody, uint32_t timeoutMs, void (*pump)(),
+              bool wantBody, size_t maxBody, unsigned long deadline, void (*pump)(),
               uint8_t *&body, size_t &bodyLen, int &status, const char *&err) {
   body = nullptr;
   bodyLen = 0;
   status = 0;
   err = "link write";
-  if (!connectTo(net, target.host, target.port, target.tls != 0)) {
-    err = "link write";
+  if (target.tls != 0 && !ensureClock(pump, deadline)) {
+    err = "clock";
+    return false;
+  }
+  const uint32_t left = remainingMs(deadline);
+  const int connectMs = left > 20000 ? 20000 : static_cast<int>(left);
+  if (!connectTo(net, target.host, target.port, target.tls != 0, connectMs, left)) {
+    err = target.tls != 0 ? "tls" : "link connect";
     return false;
   }
   if (!httpWriteRequest(target, parts, count, writeThunk, net.active)) {
@@ -278,9 +348,15 @@ bool exchange(Net &net, const HttpTarget &target, const HttpPart *parts, size_t 
 
   size_t contentLength = 0;
   bool haveLength = false;
-  if (!readHeaders(*net.active, status, contentLength, haveLength, timeoutMs, pump)) {
+  bool chunked = false;
+  if (!readHeaders(*net.active, status, contentLength, haveLength, chunked, deadline, pump)) {
     net.active->stop();
     err = "http timeout";
+    return false;
+  }
+  if (chunked && !haveLength) {
+    net.active->stop();
+    err = "chunked";
     return false;
   }
   if (wantBody && status != 200) {
@@ -303,7 +379,7 @@ bool exchange(Net &net, const HttpTarget &target, const HttpPart *parts, size_t 
     size_t dumped = 0;
     while (left > 0 && dumped < 1024) {
       const size_t chunk = left < sizeof(sink) ? left : sizeof(sink);
-      if (!readExact(*net.active, sink, chunk, timeoutMs)) {
+      if (!readExact(*net.active, sink, chunk, deadline)) {
         break;
       }
       left -= chunk;
@@ -331,7 +407,7 @@ bool exchange(Net &net, const HttpTarget &target, const HttpPart *parts, size_t 
     err = "oom dream";
     return false;
   }
-  if (!readExact(*net.active, body, contentLength, timeoutMs)) {
+  if (!readExact(*net.active, body, contentLength, deadline)) {
     free(body);
     body = nullptr;
     net.active->stop();
@@ -431,7 +507,8 @@ void uploadGallery(const uint8_t *jpeg, size_t jpegLen, const uint8_t *dream, si
   size_t bodyLen = 0;
   int status = 0;
   const char *error = nullptr;
-  const bool ok = exchange(net, target, parts, 3, false, 0, 20000, pump, body, bodyLen,
+  const unsigned long deadline = millis() + 20000;
+  const bool ok = exchange(net, target, parts, 3, false, 0, deadline, pump, body, bodyLen,
                            status, error);
   free(body);
   if (!ok) {
@@ -520,8 +597,9 @@ bool httpCook(const uint8_t *jpeg, size_t jpegLen, const char *styleId, const ch
   size_t bodyLen = 0;
   int status = 0;
   const char *error = nullptr;
-  const bool ok = exchange(net, target, parts, n, true, 400000, Defaults::kCookTimeoutMs,
-                           pump, body, bodyLen, status, error);
+  const unsigned long deadline = millis() + Defaults::kCookTimeoutMs;
+  const bool ok = exchange(net, target, parts, n, true, 400000, deadline, pump, body,
+                           bodyLen, status, error);
   if (!ok) {
     char statusBuf[24];
     const char *message = error != nullptr ? error : "http";

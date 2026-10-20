@@ -68,9 +68,9 @@ int main() {
     Somnium::HttpPart skip{"skip_gallery", nullptr, nullptr,
                            reinterpret_cast<const uint8_t *>("1"), 1};
     Somnium::HttpPart parts[] = {style, skip, image};
-    Somnium::HttpTarget target{"app.fly.dev", 443, 1, "/v1/process", "s3cret"};
+    Somnium::HttpTarget target{"somnium.example", 443, 1, "/v1/process", "s3cret"};
     assert(Somnium::httpWriteRequest(target, parts, 3, collect, &buf));
-    assert(headerValue(buf.data, "Host") == "app.fly.dev");
+    assert(headerValue(buf.data, "Host") == "somnium.example");
     assert(headerValue(buf.data, "X-Somnium-Token") == "s3cret");
     assert(buf.data.find("X-Somnium-Token:") == buf.data.rfind("X-Somnium-Token:"));
     const size_t split = buf.data.find("\r\n\r\n");
@@ -90,9 +90,9 @@ int main() {
     check("plain 443 keeps the port and an empty token adds no header");
     Buf buf;
     Somnium::HttpPart parts[] = {style, image};
-    Somnium::HttpTarget target{"app.fly.dev", 443, 0, "/v1/process", ""};
+    Somnium::HttpTarget target{"somnium.example", 443, 0, "/v1/process", ""};
     assert(Somnium::httpWriteRequest(target, parts, 2, collect, &buf));
-    assert(headerValue(buf.data, "Host") == "app.fly.dev:443");
+    assert(headerValue(buf.data, "Host") == "somnium.example:443");
     assert(buf.data.find("X-Somnium-Token:") == std::string::npos);
   }
 
@@ -100,7 +100,7 @@ int main() {
     check("a token with a newline is refused before any write");
     Buf buf;
     Somnium::HttpPart parts[] = {style, image};
-    Somnium::HttpTarget target{"app.fly.dev", 443, 1, "/v1/process", "bad\ntoken"};
+    Somnium::HttpTarget target{"somnium.example", 443, 1, "/v1/process", "bad\ntoken"};
     assert(!Somnium::httpTokenHeaderSafe("bad\ntoken"));
     assert(!Somnium::httpTokenHeaderSafe(""));
     assert(!Somnium::httpTokenHeaderSafe(nullptr));

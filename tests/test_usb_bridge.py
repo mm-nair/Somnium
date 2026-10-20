@@ -222,16 +222,25 @@ class UsbBridgeTests(unittest.TestCase):
             self.assertEqual(
                 usb_bridge.default_process_url(), "http://127.0.0.1:8080/v1/process"
             )
-        with patch.dict(os.environ, {"SOMNIUM_SERVER_URL": "https://app.fly.dev"}):
+        with patch.dict(os.environ, {"SOMNIUM_SERVER_URL": "https://somnium.example"}):
             self.assertEqual(
-                usb_bridge.default_process_url(), "https://app.fly.dev/v1/process"
+                usb_bridge.default_process_url(), "https://somnium.example/v1/process"
             )
         with patch.dict(
-            os.environ, {"SOMNIUM_SERVER_URL": "https://app.fly.dev/v1/process/"}
+            os.environ, {"SOMNIUM_SERVER_URL": "https://somnium.example/v1/process/"}
         ):
             self.assertEqual(
-                usb_bridge.default_process_url(), "https://app.fly.dev/v1/process"
+                usb_bridge.default_process_url(), "https://somnium.example/v1/process"
             )
+
+    def test_bridge_timeout_stays_under_the_board(self):
+        self.assertEqual(usb_bridge.bridge_timeout_seconds(""), 240.0)
+        self.assertEqual(usb_bridge.bridge_timeout_seconds("nope"), 240.0)
+        self.assertEqual(usb_bridge.bridge_timeout_seconds("0"), 240.0)
+        self.assertEqual(usb_bridge.bridge_timeout_seconds("240"), 240.0)
+        self.assertEqual(usb_bridge.bridge_timeout_seconds("270"), 270.0)
+        self.assertEqual(usb_bridge.bridge_timeout_seconds("360"), 290.0)
+        self.assertEqual(usb_bridge.bridge_timeout_seconds("300"), 290.0)
 
     def test_backend_http_error_body_reaches_terminal_and_device(self):
         for body, expected in (

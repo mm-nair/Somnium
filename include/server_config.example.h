@@ -6,12 +6,15 @@
 // on somnium.local:8090, the laptop bridge posts to the laptop server, and
 // no process token is sent.
 //
-// Direct cook to a public host (Fly terminates HTTPS on 443):
-//   #define SOMNIUM_SERVER_HOST "your-app.fly.dev"
+// Direct cook to the Oracle VM (Caddy terminates HTTPS on 443):
+//   #define SOMNIUM_SERVER_HOST "somnium.duckdns.org"
 //   #define SOMNIUM_SERVER_PORT 443
 //   #define SOMNIUM_SERVER_PATH "/v1/process"
 //   #define SOMNIUM_SERVER_TLS 1
 //   #define SOMNIUM_PROCESS_TOKEN "same value as SOMNIUM_PROCESS_TOKEN on the server"
+//
+// TLS checks the Let's Encrypt ISRG roots baked into the firmware. The board
+// sets its clock from NTP before the handshake. The cook budget is 300s.
 //
 // SOMNIUM_PROCESS_TOKEN is optional. When it is non-empty the cook POST
 // carries X-Somnium-Token. Leave it empty for an open server.

@@ -81,9 +81,9 @@ class WifiBridgeTests(unittest.TestCase):
             os.environ.pop("SOMNIUM_SERVER_URL", None)
             args = wifi_bridge.parse_args([])
         self.assertEqual(args.url, "http://127.0.0.1:8080/v1/process")
-        with patch.dict(os.environ, {"SOMNIUM_SERVER_URL": "https://app.fly.dev"}):
+        with patch.dict(os.environ, {"SOMNIUM_SERVER_URL": "https://somnium.example"}):
             args = wifi_bridge.parse_args([])
-        self.assertEqual(args.url, "https://app.fly.dev/v1/process")
+        self.assertEqual(args.url, "https://somnium.example/v1/process")
 
     def test_tcp_cook_uses_the_usb_framing(self):
         done = threading.Event()

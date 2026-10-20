@@ -17,8 +17,7 @@ logger = logging.getLogger("uvicorn.error")
 
 
 def form_flag(value: object) -> bool:
-    # Direct calls (tests) leave the Form() default in place. Only a real
-    # string field can ask the server to skip its gallery upload.
+    """True only for a real form string. Direct tests pass None, not a field."""
     if not isinstance(value, str):
         return False
     return value.strip().lower() in {"1", "true", "yes", "on"}

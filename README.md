@@ -76,7 +76,7 @@ An empty SSID leaves Wi-Fi off. The serial log prints `WIFI somnium ip=…` and 
 
 Leave `SOMNIUM_SERVER_HOST` empty (the example file) and the board keeps the `somnium.local` cook above. No process token is sent.
 
-To cook straight at a public host, copy the example and set the host. `SOMNIUM_SERVER_TLS` `1` opens TLS to the configured port. For Fly that port is 443, and the path is `/v1/process`. The certificate check is off (`setInsecure`): the POST is still encrypted, and the board does not carry a CA store. When `SOMNIUM_PROCESS_TOKEN` is non-empty, the POST includes `X-Somnium-Token`. That value has to match the server. Leave the token empty for an open server. The same names in `.env` (`SOMNIUM_SERVER_URL`, `SOMNIUM_PROCESS_TOKEN`) steer `wifi_bridge.py` and `usb_bridge.py` when you are still using a laptop bridge.
+To cook straight at the public host, copy the example and set the host. `SOMNIUM_SERVER_TLS` `1` opens TLS to port 443 and path `/v1/process`. The board checks the server certificate against the Let's Encrypt ISRG roots and sets the clock from NTP first. The whole POST, including the silent wait for xAI, has to finish within 300 seconds. When `SOMNIUM_PROCESS_TOKEN` is non-empty, the POST includes `X-Somnium-Token`. That value has to match the server. Leave the token empty for an open server. The same names in `.env` (`SOMNIUM_SERVER_URL`, `SOMNIUM_PROCESS_TOKEN`) steer `wifi_bridge.py` and `usb_bridge.py` when you are still using a laptop bridge. The bridge timeout stays under 300 seconds so it can still return an error to the board. Caddy on the VM waits 360 seconds, which is longer than the board, so the proxy is not what ends the cook.
 
 ```sh
 cp include/server_config.example.h include/server_config.h

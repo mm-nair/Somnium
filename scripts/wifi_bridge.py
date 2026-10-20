@@ -86,12 +86,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Board TCP port (default: 8090, or SOMNIUM_PORT)",
     )
     parser.add_argument("--url", default=usb_bridge.default_process_url())
-    parser.add_argument("--timeout", type=float, default=240.0)
+    parser.add_argument("--timeout", type=float, default=usb_bridge.bridge_timeout_seconds())
     return parser.parse_args(argv)
 
 
 def connect(host: str, port: int, timeout: float = 5.0) -> TcpPort:
     sock = socket.create_connection((host, port), timeout=timeout)
+    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     return TcpPort(sock)
 
 

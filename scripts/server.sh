@@ -17,8 +17,15 @@ fi
 
 export PYTHONPATH="$ROOT/server${PYTHONPATH:+:$PYTHONPATH}"
 
-echo "Somnium server on http://127.0.0.1:8080"
-echo "  Run ./scripts/wifi_bridge.sh in another terminal (or usb_bridge.sh over USB)."
+PORT="${SOMNIUM_PORT:-8080}"
+echo "Somnium server on http://127.0.0.1:${PORT}"
+if [[ -n "${SOMNIUM_PROCESS_TOKEN:-}" ]]; then
+  echo "  POST /v1/process requires X-Somnium-Token"
+else
+  echo "  POST /v1/process is open (set SOMNIUM_PROCESS_TOKEN before exposing it)"
+fi
+echo "  Wi-Fi cook: ./scripts/wifi_bridge.sh    USB cook: ./scripts/usb_bridge.sh"
+echo "  Remote host: server/README.md"
 echo "  providers: xAI prompt + xAI image + Open-Meteo context"
 
 exec python -m somnium_server.app

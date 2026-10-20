@@ -320,12 +320,16 @@ bool readExact(const CookPort &port, uint8_t *dst, size_t len, uint32_t timeoutM
   size_t got = 0;
   const unsigned long started = millis();
   while (got < len && millis() - started < timeoutMs) {
-    if (port.available(port.ctx) <= 0) {
+    const int ready = port.available(port.ctx);
+    if (ready < 0) {
+      return false;
+    }
+    if (ready == 0) {
       yield();
       delay(1);
       continue;
     }
-    const size_t available = static_cast<size_t>(port.available(port.ctx));
+    const size_t available = static_cast<size_t>(ready);
     const size_t remaining = len - got;
     got += port.readBytes(port.ctx, dst + got,
                           available < remaining ? available : remaining);
@@ -342,7 +346,14 @@ bool waitDreamHeader(const CookPort &port, unsigned requestId, unsigned &dreamLe
   unsigned long lastPump = started;
 
   while (millis() - started < Defaults::kCookTimeoutMs) {
-    if (port.available(port.ctx) <= 0) {
+    const int ready = port.available(port.ctx);
+    if (ready < 0) {
+      if (err != nullptr) {
+        *err = "link down";
+      }
+      return false;
+    }
+    if (ready == 0) {
       const unsigned long now = millis();
       if (now - lastPump >= 100) {
         lastPump = now;

@@ -6,7 +6,7 @@ This process is the USB serial path. Point the POST at a remote server with
 SOMNIUM_SERVER_URL or --url. SOMNIUM_PROCESS_TOKEN is sent as X-Somnium-Token
 when it is set. Unset, the local server stays open and no header is sent.
 
-  ./scripts/server.sh          # terminal A — leave running (or use the Fly host)
+  ./scripts/server.sh          # terminal A — leave running (or the Oracle host)
   ./scripts/usb_bridge.sh      # terminal B — ONLY while shooting
 
 Stop the bridge before flash / sd pull / other serial tools:
@@ -48,6 +48,29 @@ def default_process_url() -> str:
 
 def process_token() -> str:
     return os.environ.get("SOMNIUM_PROCESS_TOKEN", "").strip()
+
+
+# The board waits kCookTimeoutMs (300s), then fails the shot. Stay under that
+# so this process can still write ERR. Caddy's 360s is the proxy budget on
+# the VM, not this client timeout.
+BOARD_COOK_TIMEOUT_S = 300.0
+
+
+def bridge_timeout_seconds(raw: str | None = None) -> float:
+    if raw is None:
+        raw = os.environ.get("SOMNIUM_PROCESS_TIMEOUT", "")
+    text = raw.strip()
+    if not text:
+        return 240.0
+    try:
+        value = float(text)
+    except ValueError:
+        return 240.0
+    if value <= 0:
+        return 240.0
+    if value >= BOARD_COOK_TIMEOUT_S:
+        return BOARD_COOK_TIMEOUT_S - 10.0
+    return value
 
 
 from board import add_port_arg, find_port  # noqa: E402
@@ -395,7 +418,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     add_port_arg(ap)
     ap.add_argument("--url", default=default_process_url())
-    ap.add_argument("--timeout", type=float, default=240.0)
+    ap.add_argument("--timeout", type=float, default=bridge_timeout_seconds())
     args = ap.parse_args()
 
     port = args.port or find_acm_port() or find_port(None)
