@@ -1,7 +1,7 @@
 {
   "name": "Somnium",
   "version": "0.1.0",
-  "description": "Core hardware library for Project Somnium (camera, LCD, inputs, Wi-Fi, serial)",
+  "description": "Core hardware library for Project Somnium (camera, LCD, inputs, Wi-Fi, USB serial)",
   "keywords": "esp32, camera, ili9341, somnium",
   "authors": {
     "name": "Project Somnium"

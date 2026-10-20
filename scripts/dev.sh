@@ -7,9 +7,9 @@ Somnium bring-up (USB cook)
 0) nix develop
    cp .env.example .env                 # XAI_KEY=...
 
-1) ThinkPad brain + USB bridge
+1) ThinkPad brain. Wi-Fi cameras talk to it directly; USB is the fallback.
    ./scripts/server.sh                  # terminal A — always while demoing
-   ./scripts/usb_bridge.sh              # terminal B — ONLY while shooting
+   ./scripts/usb_bridge.sh              # terminal B — only if the camera is on USB
 
    Stop bridge before anything else that needs the port:
      pkill -f usb_bridge.py

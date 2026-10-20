@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """USB serial bridge: ESP COOK → localhost /v1/process → DREAM.
 
-Somnium cooks only over USB (no Wi‑Fi on the ESP).
+Wi-Fi is the camera's primary cook path. This bridge is the fallback when
+the board cannot reach the server, and it is still the path for capture,
+sdlist, and sdpull.
 
   ./scripts/server.sh          # terminal A — leave running
   ./scripts/usb_bridge.sh      # terminal B — ONLY while shooting
@@ -124,6 +126,7 @@ def post_process(
         )
 
     field("style", style)
+    field("source", "usb")
     if not taken_at:
         taken_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     field("taken_at", taken_at)

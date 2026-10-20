@@ -40,7 +40,7 @@ SCREENS = [
     ("review", "Review (post-shot)"),
     ("storage", "Storage"),
     ("storage_empty", "Storage (empty)"),
-    ("usb_off", "Modes · USB."),
+    ("usb_off", "Modes · WiFi."),
 ]
 
 # Fake SD gallery for Storage browsing in the preview.
@@ -242,7 +242,7 @@ class Preview:
         self.rect((0, 0, W, 22), self.theme["surface"])
         self.text(left, (6, 5), self.theme["pink"])
         self.text(
-            "USB*" if wifi else "USB.",
+            "WiFi*" if wifi else "WiFi.",
             (W // 2 - 18, 5),
             self.theme["muted"],
         )

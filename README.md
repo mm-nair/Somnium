@@ -2,7 +2,7 @@
 
 ![The Somnium camera](gallery_1.jpg)
 
-A handheld camera. You pick a look, press the shutter, and the board sends the JPEG to a laptop over USB. The laptop reads the weather, writes an edit for that look, and asks Grok Imagine to repaint the shot. The edited JPEG comes back down the same cable onto a 320×240 screen. The original and the edit both stay on the SD card.
+A handheld camera. You pick a look, press the shutter, and the board sends the JPEG to a laptop. On Wi-Fi it POSTs the shot straight to the FastAPI server. If the network is down, it falls back to the USB serial link. The laptop reads the weather, writes an edit for that look, and asks Grok Imagine to repaint the shot. The edited JPEG comes back onto a 320×240 screen. The original and the edit both stay on the SD card.
 
 *Somnium* is Latin for "the dream." The word is also the title of Johannes Kepler's *Somnium* (1634), often called the first science-fiction novel, a dream of a voyage to the Moon and of the Earth seen from there.
 
@@ -47,7 +47,21 @@ A disconnect abandons the in-flight request. The next connection starts clean. F
 
 Two things that made the transfer reliable: the serial receive buffer is 64 KB, because a dream JPEG is tens of kilobytes and the default 256-byte buffer overflowed while the panel was still refreshing. And the UI keeps animating during the wait, then stops once the DREAM header arrives, so SPI drawing and the incoming JPEG are not interleaved.
 
-The same port still takes operator commands: `hello`, `capture`, `cooktest`, `sdlist`, `sdpull`, `sdwipe`, and `TIME <epoch>` to set the clock.
+The same port still takes operator commands: `hello`, `capture`, `cooktest`, `sdlist`, `sdpull`, `sdwipe`, and `TIME <epoch>` to set the clock. Wi-Fi adds `link`, `portal`, `wificlear`, and `wificook`. `cooktest` stays on USB. `wificook` uses Wi-Fi first and falls back to USB.
+
+## Wi-Fi
+
+The ESP32-S3 radio is 2.4 GHz only. A 5 GHz venue network, or an iPhone hotspot that isolates clients, still cannot carry the cook. Use a 2.4 GHz LAN where the laptop and the camera can see each other (a travel router or an Android hotspot works; the laptop has to be on that same network, not only on USB).
+
+The camera stores the network and the server in NVS (`Preferences`, namespace `somnium`). Compile-time defaults are optional: copy `include/wifi_credentials.example.h` and `include/server_config.example.h` to the gitignored `wifi_credentials.h` and `server_config.h`. Empty strings boot the setup portal instead. A portal save wins over the compile-time file until the serial command `wificlear` or a full flash erase.
+
+Hold the shutter and the dial together for 1.5 seconds to open the portal. Do not hold the dial while resetting or flashing: GPIO 0 is also BOOT. The camera starts a SoftAP named `Somnium-Setup` (open, 192.168.4.1) and a one-page form for the SSID, password, server host, port, path, and an optional gallery URL and bearer token. The token is written to NVS on the camera and is not printed on serial. Nothing in git should contain a real token.
+
+The server host can be an IP, a URL, or `somnium.local`. `./scripts/server.sh` advertises `somnium.local` and `_somnium._tcp` on mDNS. Set `SOMNIUM_MDNS=0` to skip that, or `SOMNIUM_ADVERTISE_IP` if the guessed LAN address is wrong. If UDP 5353 is already taken, put the laptop IP in the portal.
+
+A cook checks `GET /health`, then `POST /v1/process` as multipart JPEG with `style`, `taken_at`, `lat`, `lon`, and `source=wifi`. Connect failures and HTTP 408/429/5xx retry with backoff (four tries). A 4xx other than those does not retry. There is no offline queue: if Wi-Fi still fails, the same JPEG is sent with the USB `COOK` frame. The header shows `Setup`, `WiFi*`, or `WiFi.`. The process line shows `wifi > server...`, `wifi retry N...`, `gallery...`, or `usb > thinkpad...`.
+
+When a gallery URL and bearer token are stored, the camera also POSTs `orig`, `dream`, and `meta` to that URL (`Authorization: Bearer` and `X-Somnium-Token`) and tells the laptop to skip its own gallery hook for that shot. Leave the laptop `SOMNIUM_UPLOAD_TOKEN` unset in that case. Gallery TLS does not pin a CA yet (`setInsecure`). The dream JPEG still returns if the gallery POST fails.
 
 ## Photo processing
 
@@ -89,11 +103,11 @@ On-screen text is Adafruit GFX, ASCII. Colors, the logo, mode names, thumbnails,
 
 Code is split like this:
 
-- `lib/Somnium` — camera, USB, SD, buttons, display
+- `lib/Somnium` — camera, Wi-Fi, USB, SD, buttons, display
 - `lib/SomniumUi` — pages, canvas, text, tweens
 - `lib/SomniumApp` — the five screens, and the generated mode and theme headers
-- `server/` — the FastAPI pipeline
-- `scripts/usb_bridge.py` — serial to `/v1/process`
+- `server/` — the FastAPI pipeline and mDNS advertiser
+- `scripts/usb_bridge.py` — serial fallback to `/v1/process`
 
 ## Run
 
@@ -104,11 +118,11 @@ nix develop
 cp .env.example .env     # XAI_KEY=...
 
 ./scripts/flash.sh
-./scripts/server.sh      # leave this running
-./scripts/usb_bridge.sh  # only while shooting
+./scripts/server.sh      # leave this running; laptops and cameras share the LAN
+./scripts/usb_bridge.sh  # only when the camera is falling back to USB
 ```
 
-Stop the bridge before flashing or before `./scripts/usb_pull_sd.sh`, which copies `/somnium` into `demos/sd_<timestamp>/`. `./scripts/dev.sh` prints the same checklist.
+On first boot with no saved network, join `Somnium-Setup` from a phone and submit the form. Stop the bridge before flashing or before `./scripts/usb_pull_sd.sh`, which copies `/somnium` into `demos/sd_<timestamp>/`. `./scripts/dev.sh` prints the same checklist.
 
 Offline, with no board attached:
 
@@ -116,6 +130,28 @@ Offline, with no board attached:
 nix develop -c pio run
 nix develop -c python -m unittest discover -s tests -p 'test_*.py' -v
 ```
+
+## How to test Wi-Fi
+
+On the camera, after a flash:
+
+1. Laptop and camera on the same 2.4 GHz LAN. `./scripts/server.sh` stays up.
+2. If the header says `Setup`, join `Somnium-Setup` and save the form. Or hold shutter and dial for 1.5 seconds.
+3. Serial (`link`) should show `phase=WiFi*` and an IP. `GET http://somnium.local:8080/health` from the laptop should match.
+4. Shutter. The process line should read `wifi > server...`, then Review. `server/outputs/` gains the orig, dream, and JSON sidecar with `"source": "wifi"`.
+5. Unplug the laptop from that LAN, or stop the server, and shoot again with the USB bridge running. The line should switch to `usb > thinkpad...` and the dream should still arrive.
+6. `wificook` on serial does the same cook without the shutter. `portal` reopens setup. `wificlear` drops NVS and returns to compile-time defaults.
+
+Without a camera:
+
+```sh
+nix develop -c pio run
+nix develop -c python -m unittest discover -s tests -p 'test_*.py' -v
+./scripts/server.sh          # other terminal
+./scripts/wifi_test.sh       # health, mDNS name, LAN IP
+```
+
+`tests/test_link_plan.py` compiles the portal, retry, and multipart decisions. `tests/test_wifi_upload.py` POSTs a camera-shaped multipart body at `/v1/process` and checks the dream JPEG. `tests/test_mdns_advertiser.py` checks the `somnium.local` packet. None of those need a board or an xAI key.
 
 Wire format: [PIPELINE.md](https://github.com/mm-nair/Somnium/blob/main/PIPELINE.md). Editing modes and prompts: [creative/README.md](https://github.com/mm-nair/Somnium/blob/main/creative/README.md).
 

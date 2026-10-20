@@ -59,13 +59,17 @@ struct Brand {
   }
 
   static void drawHeader(Somnium::Ui::Canvas &c, const Somnium::Ui::Theme &theme,
-                         const char *left, bool linked, const char *dateTime) {
+                         const char *left, const char *linkLabel,
+                         const char *dateTime) {
     c.fillRect({0, 0, c.width(), 22}, theme.surface);
     Somnium::Ui::TextStyle leftStyle(theme.text, 1, Somnium::Ui::Align::Left);
     Somnium::Ui::Text::draw(c, left, 6, 7, leftStyle);
     Somnium::Ui::TextStyle muted(theme.textMuted, 1);
-    Somnium::Ui::Text::draw(c, linked ? "USB*" : "USB.",
-                            static_cast<int16_t>(c.width() / 2 - 16), 7, muted);
+    const char *link =
+        linkLabel != nullptr && linkLabel[0] != '\0' ? linkLabel : "WiFi.";
+    const int16_t linkWidth = Somnium::Ui::Text::measure(link, 1).w;
+    Somnium::Ui::Text::draw(c, link, static_cast<int16_t>((c.width() - linkWidth) / 2),
+                            7, muted);
     const int16_t tw = Somnium::Ui::Text::measure(dateTime, 1).w;
     Somnium::Ui::TextStyle right(theme.text, 1);
     Somnium::Ui::Text::draw(c, dateTime,
