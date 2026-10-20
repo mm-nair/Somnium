@@ -1,0 +1,61 @@
+# Always-on image server. Build on the machine that will run it so the image
+# matches the CPU (arm64 on Ampere A1, amd64 on the AMD micro shape).
+# Copy .env.example to .env in this directory first. Do not commit .env.
+# Compose interpolates ${...} from that file. Do not use env_file: it would
+# copy DUCKDNS_TOKEN and the ACME email into the app container.
+
+services:
+  somnium:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      SOMNIUM_HOST: 0.0.0.0
+      SOMNIUM_PORT: "8080"
+      SOMNIUM_OUTPUT_DIR: /data/outputs
+      SOMNIUM_REQUIRE_AUTH: "1"
+      SOMNIUM_PROCESS_TOKEN: ${SOMNIUM_PROCESS_TOKEN:?set SOMNIUM_PROCESS_TOKEN in deploy/.env}
+      XAI_KEY: ${XAI_KEY:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
+      SOMNIUM_UPLOAD_URL: ${SOMNIUM_UPLOAD_URL:-}
+      SOMNIUM_UPLOAD_TOKEN: ${SOMNIUM_UPLOAD_TOKEN:-}
+      SOMNIUM_VENUE_LAT: ${SOMNIUM_VENUE_LAT:-}
+      SOMNIUM_VENUE_LON: ${SOMNIUM_VENUE_LON:-}
+      SOMNIUM_VENUE_LABEL: ${SOMNIUM_VENUE_LABEL:-}
+    volumes:
+      - somnium_outputs:/data
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
+
+  caddy:
+    image: caddy:2
+    depends_on:
+      somnium:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SOMNIUM_HOSTNAME: ${SOMNIUM_HOSTNAME:?set SOMNIUM_HOSTNAME in deploy/.env}
+      SOMNIUM_ACME_EMAIL: ${SOMNIUM_ACME_EMAIL:?set SOMNIUM_ACME_EMAIL in deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  somnium_outputs:
+  caddy_data:
+  caddy_config:

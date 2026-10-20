@@ -1,0 +1,17 @@
+[Unit]
+Description=Somnium image server
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/somnium/deploy
+ExecStartPre=/opt/somnium/deploy/open-http-ports.sh
+ExecStart=/usr/bin/docker compose up -d --build
+ExecStop=/usr/bin/docker compose down
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

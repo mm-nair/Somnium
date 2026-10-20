@@ -242,6 +242,33 @@ class GalleryUploadTests(unittest.TestCase):
         self.assertIn("Gallery upload failed", "\n".join(captured_refused.output))
         self.assertNotIn(TOKEN, "\n".join(captured_refused.output))
 
+    def test_skip_gallery_leaves_the_upload_to_the_camera(self):
+        pipe = self._pipeline()
+        with patch.dict(
+            os.environ,
+            {"SOMNIUM_UPLOAD_URL": self.url, "SOMNIUM_UPLOAD_TOKEN": TOKEN},
+        ), patch("somnium_server.pipeline.threading.Thread") as thread, patch(
+            "somnium_server.pipeline.urllib.request.urlopen"
+        ) as urlopen, self.assertLogs("uvicorn.error", level="INFO") as captured:
+            result = pipe.process(
+                image=ORIG,
+                style_id="cartoon",
+                taken_at="2026-10-17T19:30:00Z",
+                client_ip="127.0.0.1",
+                skip_gallery=True,
+            )
+        thread.assert_not_called()
+        urlopen.assert_not_called()
+        self.assertEqual(self.server.requests, [])
+        self.assertEqual(result.image, DREAM)
+        self.assertEqual(Path(result.meta["orig_path"]).read_bytes(), ORIG)
+        self.assertEqual(Path(result.meta["dream_path"]).read_bytes(), DREAM)
+        self.assertIn(
+            f"Gallery upload left to the camera for {result.meta['saved_stem']}",
+            "\n".join(captured.output),
+        )
+        self.assertNotIn(TOKEN, "\n".join(captured.output))
+
     def test_skips_upload_unless_both_env_vars_are_set(self):
         pipe = self._pipeline()
         cases = (

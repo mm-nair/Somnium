@@ -1,19 +1,30 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 
+from somnium_server.auth import ensure_auth_config, process_token, rejection
 from somnium_server.config import load_config
+from somnium_server.flags import form_flag
 from somnium_server.pipeline import Pipeline
 
+ensure_auth_config()
 cfg = load_config()
 pipeline = Pipeline(cfg)
-app = FastAPI(title="Somnium Server", version="0.2.0")
 logger = logging.getLogger("uvicorn.error")
+_docs = None if process_token() else "/docs"
+app = FastAPI(
+    title="Somnium Server",
+    version="0.2.1",
+    docs_url=_docs,
+    redoc_url=None if process_token() else "/redoc",
+    openapi_url=None if process_token() else "/openapi.json",
+)
 
 
 def header_preview(text: str, limit: int = 512) -> str:
@@ -31,7 +42,18 @@ def health():
         "context_provider": cfg.get("context", {}).get("provider"),
         "styles": list((cfg.get("styles") or {}).keys()),
         "creative": cfg.get("_creative_path"),
+        "auth": bool(process_token()),
     }
+
+
+@app.middleware("http")
+async def require_process_auth(request: Request, call_next):
+    if request.method == "POST" and request.url.path == "/v1/process":
+        denied = rejection(request)
+        if denied is not None:
+            logger.warning("rejected POST /v1/process: missing or wrong process token")
+            return denied
+    return await call_next(request)
 
 
 @app.post("/v1/process")
@@ -43,15 +65,26 @@ async def process(
     lat: Optional[float] = Form(None),
     lon: Optional[float] = Form(None),
     force_real: Optional[str] = Form(None),
+    skip_gallery: Optional[str] = Form(None),
 ):
+    denied = rejection(request)
+    if denied is not None:
+        logger.warning("rejected POST /v1/process: missing or wrong process token")
+        return denied
+
     raw = await image.read()
     if len(raw) < 4 or raw[:2] != b"\xff\xd8":
         return JSONResponse({"error": "expected JPEG"}, status_code=400)
 
     client_ip = request.client.host if request.client else None
-    force = (force_real or "").lower() in ("1", "true", "yes", "on")
+    force = form_flag(force_real)
+    # pipeline.process blocks on xAI. Run it off the event loop so /health
+    # still answers during a cook. The Docker healthcheck depends on that.
+    import asyncio
+
     try:
-        result = pipeline.process(
+        result = await asyncio.to_thread(
+            pipeline.process,
             image=raw,
             style_id=style,
             taken_at=taken_at,
@@ -59,6 +92,7 @@ async def process(
             lat=lat,
             lon=lon,
             force_real=force,
+            skip_gallery=form_flag(skip_gallery),
         )
     except Exception as err:  # noqa: BLE001 — edge client gets a clean error
         logger.exception("Processing failed for style=%s", style)
@@ -75,14 +109,24 @@ async def process(
 
 
 def main():
+    import inspect
     import uvicorn
 
+    ensure_auth_config()
+    if not process_token():
+        logger.warning("SOMNIUM_PROCESS_TOKEN unset; POST /v1/process is not authenticated")
     server = cfg.get("server") or {}
+    host = os.environ.get("SOMNIUM_HOST", "").strip() or server.get("host", "0.0.0.0")
+    port = int(os.environ.get("SOMNIUM_PORT") or os.environ.get("PORT") or server.get("port", 8080))
+    kwargs = {}
+    if "timeout_graceful_shutdown" in inspect.signature(uvicorn.run).parameters:
+        kwargs["timeout_graceful_shutdown"] = 25
     uvicorn.run(
         "somnium_server.app:app",
-        host=server.get("host", "0.0.0.0"),
-        port=int(server.get("port", 8080)),
+        host=host,
+        port=port,
         reload=False,
+        **kwargs,
     )
 
 

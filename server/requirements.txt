@@ -1,0 +1,5 @@
+# Pinned to the versions the unit tests ran against.
+fastapi==0.156.2
+uvicorn==0.54.0
+python-multipart==0.0.32
+pillow==13.0.0
