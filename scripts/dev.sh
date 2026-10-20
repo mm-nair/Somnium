@@ -10,6 +10,9 @@ Somnium bring-up (USB cook)
 1) ThinkPad brain + USB bridge
    ./scripts/server.sh                  # terminal A — always while demoing
    ./scripts/usb_bridge.sh              # terminal B — ONLY while shooting
+   # Or point the bridge at Fly (laptop still needed for USB):
+   # SOMNIUM_SERVER_URL + SOMNIUM_PROCESS_TOKEN in .env
+   # Deploy steps: server/README.md
 
    Stop bridge before anything else that needs the port:
      pkill -f usb_bridge.py

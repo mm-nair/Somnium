@@ -80,19 +80,23 @@ nix develop -c pio run
 nix develop -c python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-## HTTP (laptop local)
+## HTTP
 
 `POST /v1/process` multipart: `image`, `style`, `taken_at`, optional `lat`/`lon`.
 
 Response: JPEG + headers `X-Somnium-Prompt`, `X-Somnium-Context`, …
+
+Local default is `http://127.0.0.1:8080/v1/process`. `SOMNIUM_SERVER_URL` points the USB bridge and `tools/cook.py` at another host. When `SOMNIUM_PROCESS_TOKEN` is set, the request must send it as `X-Somnium-Token` or `Authorization: Bearer`. `GET /health` stays open. Fly deploy: [server/README.md](server/README.md).
 
 ## Config map
 
 | Concern | File |
 | --- | --- |
 | Modes / prompts / theme / providers | `creative/creative.json` |
-| Venue, API base URLs, model ids | `server/settings.json` |
-| API key | `.env` → `XAI_KEY` |
+| Venue, API base URLs, model ids | `server/settings.json`, overridable with `SOMNIUM_VENUE_*` |
+| API key | `.env` → `XAI_KEY` (Fly: `fly secrets set`) |
+| Process shared secret | `SOMNIUM_PROCESS_TOKEN` (required on Fly) |
+| Server URL for the bridge | `SOMNIUM_SERVER_URL` or `--url` |
 
 ## Camera-free cook
 

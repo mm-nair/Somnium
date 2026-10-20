@@ -15,9 +15,11 @@ from usb_bridge import (
     DeviceResetError,
     ProtocolError,
     SerialLineReader,
+    default_process_url,
     find_acm_port,
     find_port,
     is_board_boot,
+    load_repo_dotenv,
     open_serial,
     process_cook,
     write_exact,
@@ -43,9 +45,10 @@ def wait_cooktest(reader: SerialLineReader, timeout_s: float = 15.0) -> None:
 
 
 def main() -> int:
+    load_repo_dotenv()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", default="")
-    parser.add_argument("--url", default="http://127.0.0.1:8080/v1/process")
+    parser.add_argument("--url", default=default_process_url())
     parser.add_argument("--timeout", type=float, default=240.0)
     args = parser.parse_args()
     port = args.port or find_acm_port() or find_port(None)

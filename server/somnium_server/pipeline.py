@@ -18,6 +18,34 @@ from somnium_server.providers.registry import build_stack
 
 logger = logging.getLogger("uvicorn.error")
 _UPLOAD_TIMEOUT_S = 20
+_VARIATIONS_NAME = ".somnium-variations.json"
+
+
+def _load_variations(path: Path) -> dict[str, dict[str, str]]:
+    """Last Surprise picks, so a restart does not repeat them immediately."""
+    try:
+        raw = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    loaded: dict[str, dict[str, str]] = {}
+    for style_id, picks in raw.items():
+        if not isinstance(style_id, str) or not isinstance(picks, dict):
+            continue
+        loaded[style_id] = {
+            str(category): str(choice)
+            for category, choice in picks.items()
+            if isinstance(category, str) and isinstance(choice, str)
+        }
+    return loaded
+
+
+def _save_variations(path: Path, variations: dict[str, dict[str, str]]) -> None:
+    payload = json.dumps(variations, indent=2, sort_keys=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(payload)
+    tmp.replace(path)
 
 
 @dataclass
@@ -34,12 +62,13 @@ class Pipeline:
     def __init__(self, cfg: dict[str, Any]):
         self.cfg = cfg
         self.stack = build_stack(cfg)
-        self.previous_variations: dict[str, dict[str, str]] = {}
         out = Path(cfg.get("server", {}).get("output_dir", "outputs"))
         if not out.is_absolute():
             out = Path(__file__).resolve().parent.parent / out
         out.mkdir(parents=True, exist_ok=True)
         self.output_dir = out
+        self._variation_lock = threading.Lock()
+        self.previous_variations = _load_variations(out / _VARIATIONS_NAME)
 
     def process(
         self,
@@ -72,16 +101,22 @@ class Pipeline:
             creative=self.cfg.get("creative") or {},
         )
         variation: dict[str, str] = {}
-        previous_variation = self.previous_variations.get(style_id, {})
-        for category, options in (style.get("variations") or {}).items():
-            candidates = [
-                option for option in options
-                if option != previous_variation.get(category)
-            ] or options
-            if candidates:
-                variation[category] = random.SystemRandom().choice(candidates)
+        with self._variation_lock:
+            previous_variation = self.previous_variations.get(style_id, {})
+            for category, options in (style.get("variations") or {}).items():
+                candidates = [
+                    option for option in options
+                    if option != previous_variation.get(category)
+                ] or options
+                if candidates:
+                    variation[category] = random.SystemRandom().choice(candidates)
+            if variation:
+                self.previous_variations[style_id] = variation
+                try:
+                    _save_variations(self.output_dir / _VARIATIONS_NAME, self.previous_variations)
+                except OSError:
+                    logger.exception("could not save variation memory for %s", style_id)
         if variation:
-            self.previous_variations[style_id] = variation
             context["variation"] = variation
         prompt = self.stack["prompt"].synthesize(
             style_id=style_id,

@@ -73,7 +73,7 @@ class XaiImageProvider:
         if not key:
             key = env_secret("XAI_API_KEY") or env_secret("XAI_KEY")
         if not key:
-            raise RuntimeError("XAI_KEY missing — put it in repo .env")
+            raise RuntimeError("XAI_KEY missing — set XAI_KEY in the environment")
 
         in_size = _jpeg_size(image)
         base = (image_cfg.get("base_url") or "https://api.x.ai/v1").rstrip("/")

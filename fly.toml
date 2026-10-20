@@ -1,0 +1,48 @@
+# Public image server. Edit `app` if that name is already taken on Fly.
+# Hostname becomes https://<app>.fly.dev
+app = "somnium-camera"
+primary_region = "sea"
+
+kill_signal = "SIGTERM"
+kill_timeout = 30
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  SOMNIUM_HOST = "0.0.0.0"
+  SOMNIUM_PORT = "8080"
+  SOMNIUM_OUTPUT_DIR = "/data/outputs"
+  # Refuse to boot unless SOMNIUM_PROCESS_TOKEN is set as a secret.
+  SOMNIUM_REQUIRE_AUTH = "1"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # One always-on machine. Auto-stop would cold-start a cook and can kill
+  # the gallery upload thread. A volume cannot be shared by a second machine.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  # A cook sends no bytes until the JPEG is ready. The proxy default idle
+  # window is 60s, which is shorter than an xAI edit.
+  [http_service.http_options]
+    idle_timeout = 600
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/health"
+
+[[mounts]]
+  source = "somnium_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

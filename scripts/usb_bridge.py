@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""USB serial bridge: ESP COOK → localhost /v1/process → DREAM.
+"""USB serial bridge: ESP COOK → POST /v1/process → DREAM.
 
-Somnium cooks only over USB (no Wi‑Fi on the ESP).
+Somnium cooks over USB on this branch. Point the POST at a remote server with
+SOMNIUM_SERVER_URL or --url. SOMNIUM_PROCESS_TOKEN is sent as X-Somnium-Token.
 
-  ./scripts/server.sh          # terminal A — leave running
+  ./scripts/server.sh          # terminal A — leave running (or use the Fly host)
   ./scripts/usb_bridge.sh      # terminal B — ONLY while shooting
 
 Stop the bridge before flash / sd pull / other serial tools:
@@ -15,6 +16,7 @@ from __future__ import annotations
 import argparse
 import binascii
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -23,6 +25,27 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
+
+
+def load_repo_dotenv() -> None:
+    """Load repo .env without overriding variables already set in the shell."""
+    sys.path.insert(0, str(ROOT / "server"))
+    from somnium_server.config import load_dotenv
+
+    load_dotenv(ROOT / ".env")
+
+
+def default_process_url() -> str:
+    raw = os.environ.get("SOMNIUM_SERVER_URL", "").strip().rstrip("/")
+    if not raw:
+        return "http://127.0.0.1:8080/v1/process"
+    if raw.endswith("/v1/process"):
+        return raw
+    return raw + "/v1/process"
+
+
+def process_token() -> str:
+    return os.environ.get("SOMNIUM_PROCESS_TOKEN", "").strip()
 
 from board import add_port_arg, find_port  # noqa: E402
 
@@ -142,13 +165,17 @@ def post_process(
     parts.append(f"\r\n--{boundary}--\r\n".encode())
     body = b"".join(parts)
 
+    headers = {
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "Accept": "image/jpeg",
+    }
+    token = process_token()
+    if token:
+        headers["X-Somnium-Token"] = token
     req = urllib.request.Request(
         url,
         data=body,
-        headers={
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "Accept": "image/jpeg",
-        },
+        headers=headers,
         method="POST",
     )
     try:
@@ -361,10 +388,15 @@ def find_acm_port(preferred: str | None = None) -> str | None:
 
 
 def main() -> int:
+    load_repo_dotenv()
     ap = argparse.ArgumentParser(description=__doc__)
     add_port_arg(ap)
-    ap.add_argument("--url", default="http://127.0.0.1:8080/v1/process")
-    ap.add_argument("--timeout", type=float, default=240.0)
+    ap.add_argument("--url", default=default_process_url())
+    ap.add_argument(
+        "--timeout",
+        type=float,
+        default=float(os.environ.get("SOMNIUM_PROCESS_TIMEOUT", "240")),
+    )
     args = ap.parse_args()
 
     port = args.port or find_acm_port() or find_port(None)

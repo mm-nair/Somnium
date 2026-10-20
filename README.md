@@ -117,6 +117,16 @@ nix develop -c pio run
 nix develop -c python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
+## Remote server
+
+The image server can run in the cloud so the laptop does not have to stay on. It is the same FastAPI app: one `POST /v1/process` that can sit for a few minutes while xAI works, then writes the shot to disk and uploads it to the gallery on a background thread.
+
+That shape does not fit Vercel. A cook's own timeouts are 90 seconds for the prompt and 240 seconds for the image edit, the shot files need a disk that survives the request, and the gallery upload keeps running after the JPEG is returned. Fly.io runs the same process in a container, with a volume for `server/outputs` and HTTPS on a public hostname. New Fly accounts have no free tier. One always-on 512 MB machine is about $3.69 per month in Ashburn and a little more in Seattle, plus about $0.15 for a 1 GB volume. Leave it running; stopping the machine when idle would cold-start the next photo and can drop the gallery upload.
+
+Deploy steps, secrets, and how the camera reaches the host are in [`server/README.md`](server/README.md).
+
+The gallery at [somnium.photo](https://somnium.photo) stays on Vercel. This is only the image server.
+
 Wire format: [PIPELINE.md](https://github.com/mm-nair/Somnium/blob/main/PIPELINE.md). Editing modes and prompts: [creative/README.md](https://github.com/mm-nair/Somnium/blob/main/creative/README.md).
 
 ## Built with
