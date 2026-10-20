@@ -216,7 +216,7 @@ int main() {
             executable = directory / "text"
             result = subprocess.run(
                 [
-                    "c++",
+                    "g++",
                     "-std=c++17",
                     "-DARDUINO=100",
                     "-I",

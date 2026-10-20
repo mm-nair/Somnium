@@ -44,11 +44,49 @@ def _load_json(path: Path) -> dict[str, Any]:
         return json.load(fh)
 
 
+def _env_text(name: str) -> str | None:
+    value = os.environ.get(name, "").strip()
+    return value or None
+
+
+def _env_path(name: str, default: Path) -> Path:
+    raw = _env_text(name)
+    if not raw:
+        return default
+    return Path(raw).expanduser()
+
+
+def _env_int(name: str) -> int | None:
+    raw = _env_text(name)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError as err:
+        raise SystemExit(f"{name} must be an integer, got {raw!r}") from err
+
+
+def _env_float(name: str) -> float | None:
+    raw = _env_text(name)
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except ValueError as err:
+        raise SystemExit(f"{name} must be a number, got {raw!r}") from err
+
+
 def load_config() -> dict[str, Any]:
-    """Merge creative.json (edit this!) with settings.json (plumbing)."""
+    """Merge creative.json (edit this!) with settings.json (plumbing).
+
+    Environment variables override the JSON files so a container can be
+    configured without editing paths that only exist on the laptop.
+    """
     load_dotenv()
-    creative = _load_json(CREATIVE_PATH)
-    settings = _load_json(SETTINGS_PATH) if SETTINGS_PATH.is_file() else {}
+    creative_path = _env_path("SOMNIUM_CREATIVE_PATH", CREATIVE_PATH)
+    settings_path = _env_path("SOMNIUM_SETTINGS_PATH", SETTINGS_PATH)
+    creative = _load_json(creative_path)
+    settings = _load_json(settings_path) if settings_path.is_file() else {}
 
     modes = {m["id"]: m for m in creative.get("modes", [])}
     models = creative.get("models") or {}
@@ -56,19 +94,28 @@ def load_config() -> dict[str, Any]:
     prompt_api = settings.get("prompt_api") or {}
     image_api = settings.get("image_api") or {}
     context_cfg = settings.get("context") or {}
+    port = _env_int("SOMNIUM_PORT")
+    if port is None:
+        port = _env_int("PORT")
+    if port is None:
+        port = int(settings.get("port", 8080))
+    lat = _env_float("SOMNIUM_VENUE_LAT")
+    lon = _env_float("SOMNIUM_VENUE_LON")
 
     return {
-        "_creative_path": str(CREATIVE_PATH),
-        "_settings_path": str(SETTINGS_PATH),
+        "_creative_path": str(creative_path),
+        "_settings_path": str(settings_path),
         "server": {
-            "host": settings.get("host", "0.0.0.0"),
-            "port": settings.get("port", 8080),
-            "output_dir": settings.get("output_dir", "outputs"),
+            "host": _env_text("SOMNIUM_HOST") or settings.get("host", "0.0.0.0"),
+            "port": port,
+            "output_dir": _env_text("SOMNIUM_OUTPUT_DIR")
+            or settings.get("output_dir", "outputs"),
         },
         "location": {
-            "default_lat": venue.get("lat", 0),
-            "default_lon": venue.get("lon", 0),
-            "default_label": venue.get("label", "Somnium"),
+            "default_lat": venue.get("lat", 0) if lat is None else lat,
+            "default_lon": venue.get("lon", 0) if lon is None else lon,
+            "default_label": _env_text("SOMNIUM_VENUE_LABEL")
+            or venue.get("label", "Somnium"),
         },
         "styles": {
             mid: {

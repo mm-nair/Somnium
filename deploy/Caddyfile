@@ -1,0 +1,24 @@
+# TLS for the public name. Caddy obtains and renews the certificate over
+# HTTP-01, so ports 80 and 443 must reach this process.
+#
+# A cook sends no response bytes until the JPEG is ready. response_header_timeout
+# is how long Caddy waits for those headers after the request is written, and
+# it has to sit past the board's 300s (kCookTimeoutMs). read_timeout is the
+# idle gap while reading the upstream response, not a second cook cap.
+# write_timeout is only the upload of the request to the app.
+# flush_interval -1 buffers the response so Caddy can send Content-Length.
+# The board rejects a chunked body.
+{
+	email {$SOMNIUM_ACME_EMAIL}
+}
+
+{$SOMNIUM_HOSTNAME} {
+	reverse_proxy somnium:8080 {
+		flush_interval -1
+		transport http {
+			response_header_timeout 360s
+			read_timeout 360s
+			write_timeout 60s
+		}
+	}
+}

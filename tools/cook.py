@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,16 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def http_base_from_env() -> str:
+    raw = os.environ.get("SOMNIUM_SERVER_URL", "").strip().rstrip("/")
+    if not raw:
+        return "http://127.0.0.1:8080"
+    suffix = "/v1/process"
+    if raw.endswith(suffix):
+        raw = raw[: -len(suffix)]
+    return raw or "http://127.0.0.1:8080"
 
 
 def _to_jpeg(raw: bytes) -> bytes:
@@ -150,10 +161,14 @@ def cook_http(
     body = b"".join(chunks)
 
     url = base_url.rstrip("/") + "/v1/process"
+    headers = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+    token = os.environ.get("SOMNIUM_PROCESS_TOKEN", "").strip()
+    if token:
+        headers["X-Somnium-Token"] = token
     req = urllib.request.Request(
         url,
         data=body,
-        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        headers=headers,
         method="POST",
     )
     print(f"POST {url} style={style} at={taken_at} …")
@@ -181,6 +196,10 @@ def cook_http(
 
 
 def main() -> int:
+    sys.path.insert(0, str(ROOT / "server"))
+    from somnium_server.config import load_dotenv
+
+    load_dotenv()
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "image",
@@ -209,8 +228,8 @@ def main() -> int:
     )
     p.add_argument(
         "--http",
-        default="http://127.0.0.1:8080",
-        help="Server base URL when not using --local",
+        default=None,
+        help="Server base URL when not using --local (default: local, or SOMNIUM_SERVER_URL)",
     )
     p.add_argument(
         "--force-real",
@@ -224,6 +243,7 @@ def main() -> int:
         return 1
 
     taken_at = args.taken_at or _iso_now()
+    base_url = args.http or http_base_from_env()
     out_dir = args.out_dir if args.out_dir.is_absolute() else ROOT / args.out_dir
     force_real = args.force_real or True
     rc = 0
@@ -246,7 +266,7 @@ def main() -> int:
                 args.lat,
                 args.lon,
                 force_real,
-                args.http,
+                base_url,
                 out_dir,
             )
         if code != 0:

@@ -117,6 +117,12 @@ nix develop -c pio run
 nix develop -c python -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
+## Remote server
+
+The image server can run on an Oracle Cloud Always Free VM so the laptop does not have to stay on. It is the same FastAPI app. Caddy terminates HTTPS on 443. Shot files stay on the VM disk. The compute, the boot disk, and the outbound allowance used here are Always Free: **$0**, not a trial credit, as long as the instance stays inside the Always Free limits. A card is required at signup for a $1 authorization hold that Oracle reverses. Details, the other free hosts that do not fit, and the exact setup are in [`server/README.md`](server/README.md).
+
+The gallery at [somnium.photo](https://somnium.photo) stays on Vercel. This is only the image server.
+
 Wire format: [PIPELINE.md](https://github.com/mm-nair/Somnium/blob/main/PIPELINE.md). Editing modes and prompts: [creative/README.md](https://github.com/mm-nair/Somnium/blob/main/creative/README.md).
 
 ## Built with
