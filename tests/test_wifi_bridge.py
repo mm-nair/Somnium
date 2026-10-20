@@ -70,11 +70,19 @@ class WifiBridgeTests(unittest.TestCase):
         self.assertEqual(args.host, "somnium.local")
         self.assertEqual(args.port, 8090)
         with patch.dict(
-            "os.environ", {"SOMNIUM_HOST": "10.1.2.3", "SOMNIUM_PORT": "9000"}
+            "os.environ",
+            {"SOMNIUM_BOARD_HOST": "10.1.2.3", "SOMNIUM_BOARD_PORT": "9000"},
         ):
             args = wifi_bridge.parse_args([])
         self.assertEqual(args.host, "10.1.2.3")
         self.assertEqual(args.port, 9000)
+        # Server bind address. Must not steer the board socket.
+        with patch.dict(
+            "os.environ", {"SOMNIUM_HOST": "0.0.0.0", "SOMNIUM_PORT": "8080"}
+        ):
+            args = wifi_bridge.parse_args([])
+        self.assertEqual(args.host, "somnium.local")
+        self.assertEqual(args.port, 8090)
         args = wifi_bridge.parse_args(["--host", "192.168.1.20", "--port", "8091"])
         self.assertEqual((args.host, args.port), ("192.168.1.20", 8091))
         with patch.dict(os.environ, {"SOMNIUM_SERVER_URL": ""}, clear=False):

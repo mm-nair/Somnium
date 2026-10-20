@@ -70,7 +70,7 @@ An empty SSID leaves Wi-Fi off. The serial log prints `WIFI somnium ip=…` and 
 ./scripts/wifi_bridge.sh --host 192.168.1.20
 ```
 
-`SOMNIUM_HOST` and `SOMNIUM_PORT` (default `somnium.local` and `8090`) override the same values. Do not run the USB bridge and the Wi-Fi bridge at the same time.
+`SOMNIUM_BOARD_HOST` and `SOMNIUM_BOARD_PORT` (default `somnium.local` and `8090`) override the same values. Those names are not the server bind address (`SOMNIUM_HOST` / `SOMNIUM_PORT`). Do not run the USB bridge and the Wi-Fi bridge at the same time.
 
 ### Direct server
 

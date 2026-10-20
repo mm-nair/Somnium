@@ -76,14 +76,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--host",
-        default=os.environ.get("SOMNIUM_HOST", DEFAULT_HOST),
-        help="Board hostname or IP (default: somnium.local, or SOMNIUM_HOST)",
+        default=os.environ.get("SOMNIUM_BOARD_HOST", DEFAULT_HOST),
+        help="Board hostname or IP (default: somnium.local, or SOMNIUM_BOARD_HOST)",
     )
     parser.add_argument(
         "--port",
         type=int,
-        default=int(os.environ.get("SOMNIUM_PORT", str(DEFAULT_PORT))),
-        help="Board TCP port (default: 8090, or SOMNIUM_PORT)",
+        default=int(os.environ.get("SOMNIUM_BOARD_PORT", str(DEFAULT_PORT))),
+        help="Board TCP port (default: 8090, or SOMNIUM_BOARD_PORT)",
     )
     parser.add_argument("--url", default=usb_bridge.default_process_url())
     parser.add_argument("--timeout", type=float, default=usb_bridge.bridge_timeout_seconds())
