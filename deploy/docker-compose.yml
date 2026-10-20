@@ -1,19 +1,27 @@
 # Always-on image server. Build on the machine that will run it so the image
 # matches the CPU (arm64 on Ampere A1, amd64 on the AMD micro shape).
 # Copy .env.example to .env in this directory first. Do not commit .env.
+# Compose interpolates ${...} from that file. Do not use env_file: it would
+# copy DUCKDNS_TOKEN and the ACME email into the app container.
 
 services:
   somnium:
     build:
       context: ..
       dockerfile: Dockerfile
-    env_file:
-      - .env
     environment:
       SOMNIUM_HOST: 0.0.0.0
       SOMNIUM_PORT: "8080"
       SOMNIUM_OUTPUT_DIR: /data/outputs
       SOMNIUM_REQUIRE_AUTH: "1"
+      SOMNIUM_PROCESS_TOKEN: ${SOMNIUM_PROCESS_TOKEN:?set SOMNIUM_PROCESS_TOKEN in deploy/.env}
+      XAI_KEY: ${XAI_KEY:-}
+      XAI_API_KEY: ${XAI_API_KEY:-}
+      SOMNIUM_UPLOAD_URL: ${SOMNIUM_UPLOAD_URL:-}
+      SOMNIUM_UPLOAD_TOKEN: ${SOMNIUM_UPLOAD_TOKEN:-}
+      SOMNIUM_VENUE_LAT: ${SOMNIUM_VENUE_LAT:-}
+      SOMNIUM_VENUE_LON: ${SOMNIUM_VENUE_LON:-}
+      SOMNIUM_VENUE_LABEL: ${SOMNIUM_VENUE_LABEL:-}
     volumes:
       - somnium_outputs:/data
     restart: unless-stopped

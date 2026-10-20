@@ -1,26 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cat <<'EOF'
-Somnium bring-up (USB cook)
-===========================
+Somnium bring-up (Wi-Fi cook, USB fallback)
+========================================
 
 0) nix develop
    cp .env.example .env                 # XAI_KEY=...
-
-1) ThinkPad brain + USB bridge
-   ./scripts/server.sh                  # terminal A — always while demoing
-   ./scripts/usb_bridge.sh              # terminal B — ONLY while shooting
-   # Or point the bridge at the Oracle VM (laptop still needed for USB):
-   # SOMNIUM_SERVER_URL + SOMNIUM_PROCESS_TOKEN in .env
+   cp include/wifi_secrets.example.h include/wifi_secrets.h
+   cp include/server_config.example.h include/server_config.h
+   # empty SOMNIUM_SERVER_HOST = somnium.local, no token
+   # Oracle VM: host, port 443, SOMNIUM_SERVER_TLS 1, SOMNIUM_PROCESS_TOKEN
    # Deploy steps: server/README.md
 
-   Stop bridge before anything else that needs the port:
+1) ThinkPad brain + one bridge
+   ./scripts/server.sh                  # terminal A — always while demoing
+   ./scripts/wifi_bridge.sh             # terminal B — Wi-Fi cook (somnium.local:8090)
+   ./scripts/usb_bridge.sh              # or this, when the Wi-Fi client is stopped
+   # Or point a bridge at the Oracle VM (SOMNIUM_SERVER_URL + SOMNIUM_PROCESS_TOKEN in .env).
+   # Keep SOMNIUM_PROCESS_TIMEOUT under 300. Caddy waits 360.
+
+   Stop the USB bridge before anything else that needs the port:
      pkill -f usb_bridge.py
-     ./scripts/flash.sh                 # then restart bridge
+     ./scripts/flash.sh                 # Wi-Fi bridge reconnects on its own
      ./scripts/usb_pull_sd.sh           # → demos/sd_<timestamp>/
 
 2) Shoot
-   Modes → shutter → Process ("usb → thinkpad…") → Review · dream (~20s+)
+   Modes → shutter → Process ("wifi > thinkpad...", "wifi > server...", or "usb > thinkpad...") → Review · dream (~20s+)
    dial-click → Storage → spin dial → STYLE·raw / STYLE·mod
    Bridge log should show: COOK … / DREAM … accepted by ESP / | HOST DREAM … / | UI review
 

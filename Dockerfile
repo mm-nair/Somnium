@@ -15,7 +15,8 @@ WORKDIR /app
 
 COPY server/requirements.txt /app/server/requirements.txt
 RUN pip install --no-cache-dir -r /app/server/requirements.txt \
-    && useradd --create-home --uid 10001 somnium
+    && useradd --create-home --uid 10001 somnium \
+    && command -v runuser >/dev/null
 
 COPY server /app/server
 COPY creative/creative.json /app/creative/creative.json

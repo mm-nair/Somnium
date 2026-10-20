@@ -56,7 +56,7 @@ Use one Ampere A1 instance: 1 OCPU, 6 GB RAM, Ubuntu, a public subnet, and the e
 
 3. In the subnet security list, allow ingress TCP 80 and TCP 443 from `0.0.0.0/0`. Leave SSH restricted to your own IP if you can. Do not open 8080. The app is only on the Docker network.
 
-4. SSH in, then let the instance firewall accept the same ports (Oracle's Ubuntu image drops them even after the security list allows them):
+4. SSH in, then open the instance firewall. Oracle's Ubuntu image rejects packets the security list already allowed. Docker publishes 80 and 443 on the FORWARD chain, and that image rejects FORWARD with `icmp-host-prohibited`, so an INPUT rule alone does not let the ports through. The reject can sit on `iptables` or on `iptables-legacy` (whichever backend the image used). `deploy/open-http-ports.sh` accepts 80 and 443 on INPUT and deletes that FORWARD reject on both. Do not `iptables-save` while Docker is running: the `DOCKER` chains are not present at boot, and a saved ruleset breaks the next start. `somnium.service` runs the script again on boot.
 
 ```sh
 sudo apt-get update
@@ -103,7 +103,7 @@ sudo systemctl enable --now somnium.service
 
 `/health` is public and includes `"auth": true`. `POST /v1/process` without `X-Somnium-Token` or `Authorization: Bearer` returns 401 and does not call xAI. API docs are off while the token is set.
 
-Caddy obtains the certificate over port 80 and redirects callers to 443. The reverse proxy waits 360 seconds for the cook, past the board's 300 second limit. Shot files are in the `somnium_outputs` volume. Backfill the gallery from there with:
+Caddy obtains the certificate over port 80 and redirects callers to 443. `response_header_timeout` is 360 seconds, past the board's 300 second limit, so the proxy is not what ends the cook. The response is buffered (`flush_interval -1`) and sent with `Content-Length`. The board does not accept a chunked body. Shot files are in the `somnium_outputs` volume. Backfill the gallery from there with:
 
 ```sh
 docker compose exec somnium \
@@ -123,10 +123,10 @@ Oracle may reclaim an Always Free instance when, over 7 days, CPU utilization at
 ```sh
 SOMNIUM_SERVER_URL=https://somnium.duckdns.org/v1/process
 SOMNIUM_PROCESS_TOKEN=<the same process token>
-SOMNIUM_PROCESS_TIMEOUT=360
+SOMNIUM_PROCESS_TIMEOUT=240
 ```
 
-The USB cable still needs the laptop.
+The bridge default is 240 seconds. A value at or above the board's 300 second wait is capped to 290, so the laptop can still write `ERR` before the board gives up. Caddy's 360 seconds is the proxy budget, not this client timeout. The USB cable still needs the laptop.
 
 ## ESP32
 
@@ -140,7 +140,7 @@ The USB cable still needs the laptop.
 | `SOMNIUM_SERVER_TLS` | `1` |
 | `SOMNIUM_PROCESS_TOKEN` | the same secret as `deploy/.env` |
 
-An empty host still means the laptop bridge and `somnium.local`. A non-empty host makes the board POST the cook itself. It sends `X-Somnium-Token` when the process token is non-empty. TLS uses `WiFiClientSecure::setInsecure()`, so it does not need a CA store. Caddy still presents a real Let's Encrypt certificate.
+An empty host still means the laptop bridge and `somnium.local`. A non-empty host makes the board POST the cook itself. It sends `X-Somnium-Token` when the process token is non-empty. TLS checks the Let's Encrypt certificate against the ISRG roots baked into the firmware and sets the clock from NTP first. A cook with no clock, or a certificate that does not chain to those roots, fails closed. Caddy still presents a real Let's Encrypt certificate.
 
 When that firmware also has a gallery URL and gallery token, the cook includes `skip_gallery=1` and this server does not upload the same shot. Leave the camera gallery settings empty to let the VM upload. The gallery token is a different secret from the process token.
 
@@ -154,7 +154,7 @@ When that firmware also has a gallery URL and gallery token, the cook includes `
 | `SOMNIUM_HOSTNAME` | Name Caddy certificates. Set in `deploy/.env`. |
 | `SOMNIUM_ACME_EMAIL` | Let's Encrypt account email. |
 | `SOMNIUM_SERVER_URL` | Bridge and cook client base URL or full `/v1/process` URL. |
-| `SOMNIUM_PROCESS_TIMEOUT` | Bridge HTTP timeout in seconds. Default 240. Use 360 for a remote cook. |
+| `SOMNIUM_PROCESS_TIMEOUT` | Bridge HTTP timeout in seconds. Default 240. Values at or above 300 are capped to 290. Caddy waits 360. |
 | `SOMNIUM_HOST` / `SOMNIUM_PORT` | Bind address inside the container. `PORT` is used if `SOMNIUM_PORT` is unset. |
 | `SOMNIUM_OUTPUT_DIR` | Shot directory. `/data/outputs` on the VM. |
 | `SOMNIUM_VENUE_LAT` / `SOMNIUM_VENUE_LON` / `SOMNIUM_VENUE_LABEL` | Override `settings.json` when the request has no coordinates. |

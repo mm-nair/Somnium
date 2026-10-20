@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from email.message import EmailMessage
 from pathlib import Path
@@ -201,6 +202,45 @@ class AuthTests(unittest.TestCase):
         self.assertTrue(body["auth"])
         with patch.dict(os.environ, {"SOMNIUM_PROCESS_TOKEN": ""}):
             self.assertFalse(app_module.health()["auth"])
+
+    def test_health_answers_while_a_cook_blocks(self):
+        result = Mock(
+            style_id="anime",
+            prompt="ok",
+            image=JPEG,
+            context={"summary": "day"},
+            meta={"orig_path": "/out/a.jpg", "dream_path": "/out/b.jpg"},
+        )
+        loop_ran = threading.Event()
+
+        def block(**kwargs):
+            del kwargs
+            if not loop_ran.wait(2):
+                raise AssertionError("event loop blocked during cook")
+            return result
+
+        async def run():
+            task = asyncio.create_task(
+                app_module.process(
+                    request=http_request(),
+                    image=UploadFile(io.BytesIO(JPEG)),
+                    style="anime",
+                    taken_at=None,
+                    lat=None,
+                    lon=None,
+                    force_real=None,
+                )
+            )
+            await asyncio.sleep(0.05)
+            loop_ran.set()
+            self.assertTrue(app_module.health()["ok"])
+            response = await task
+            self.assertEqual(response.status_code, 200)
+
+        with patch.dict(os.environ, {"SOMNIUM_PROCESS_TOKEN": ""}), patch.object(
+            app_module.pipeline, "process", side_effect=block
+        ):
+            asyncio.run(run())
 
     def test_require_auth_refuses_to_import_without_a_token(self):
         with patch.dict(

@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse, Response
 
 from somnium_server.auth import ensure_auth_config, process_token, rejection
 from somnium_server.config import load_config
+from somnium_server.flags import form_flag
 from somnium_server.pipeline import Pipeline
 
 ensure_auth_config()
@@ -24,13 +25,6 @@ app = FastAPI(
     redoc_url=None if process_token() else "/redoc",
     openapi_url=None if process_token() else "/openapi.json",
 )
-
-
-def form_flag(value: object) -> bool:
-    """True only for a real form string. Direct tests pass None, not a field."""
-    if not isinstance(value, str):
-        return False
-    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def header_preview(text: str, limit: int = 512) -> str:
@@ -84,8 +78,13 @@ async def process(
 
     client_ip = request.client.host if request.client else None
     force = form_flag(force_real)
+    # pipeline.process blocks on xAI. Run it off the event loop so /health
+    # still answers during a cook. The Docker healthcheck depends on that.
+    import asyncio
+
     try:
-        result = pipeline.process(
+        result = await asyncio.to_thread(
+            pipeline.process,
             image=raw,
             style_id=style,
             taken_at=taken_at,

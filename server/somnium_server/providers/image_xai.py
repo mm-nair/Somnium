@@ -5,11 +5,17 @@ from __future__ import annotations
 import base64
 import io
 import json
+import time
 import urllib.error
 import urllib.request
 from typing import Any
 
 from somnium_server.config import env_secret
+
+# The board abandons a cook at 300s. This provider is the long wait, and a
+# URL fallback used to add another 60s on top of the edit call. Both steps
+# share one budget so the JPEG is on the wire before the board gives up.
+_IMAGE_BUDGET_S = 240.0
 
 # Default: grade + subtle optical mood; no scene rewrite.
 _FILTER_GUARD = (
@@ -118,8 +124,9 @@ class XaiImageProvider:
             },
             method="POST",
         )
+        started = time.monotonic()
         try:
-            with urllib.request.urlopen(req, timeout=240) as resp:
+            with urllib.request.urlopen(req, timeout=_IMAGE_BUDGET_S) as resp:
                 payload = json.loads(resp.read().decode())
         except urllib.error.HTTPError as err:
             detail = err.read().decode(errors="replace")[:500]
@@ -134,7 +141,10 @@ class XaiImageProvider:
         if item.get("b64_json"):
             out = base64.b64decode(item["b64_json"])
         elif item.get("url"):
-            with urllib.request.urlopen(item["url"], timeout=60) as img_resp:
+            remaining = _IMAGE_BUDGET_S - (time.monotonic() - started)
+            if remaining < 1:
+                raise RuntimeError("xAI image edit exceeded the cook budget")
+            with urllib.request.urlopen(item["url"], timeout=remaining) as img_resp:
                 out = img_resp.read()
         else:
             raise RuntimeError(f"xAI image edit missing b64/url: {list(item)}")

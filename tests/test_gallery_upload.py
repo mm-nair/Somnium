@@ -244,20 +244,12 @@ class GalleryUploadTests(unittest.TestCase):
 
     def test_skip_gallery_leaves_the_upload_to_the_camera(self):
         pipe = self._pipeline()
-        started = []
-        real_thread = threading.Thread
-
-        class TrackingThread(real_thread):
-            def __init__(self, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-                started.append(self)
-
         with patch.dict(
             os.environ,
             {"SOMNIUM_UPLOAD_URL": self.url, "SOMNIUM_UPLOAD_TOKEN": TOKEN},
-        ), patch("somnium_server.pipeline.threading.Thread", TrackingThread), self.assertLogs(
-            "uvicorn.error", level="INFO"
-        ) as captured:
+        ), patch("somnium_server.pipeline.threading.Thread") as thread, patch(
+            "somnium_server.pipeline.urllib.request.urlopen"
+        ) as urlopen, self.assertLogs("uvicorn.error", level="INFO") as captured:
             result = pipe.process(
                 image=ORIG,
                 style_id="cartoon",
@@ -265,11 +257,17 @@ class GalleryUploadTests(unittest.TestCase):
                 client_ip="127.0.0.1",
                 skip_gallery=True,
             )
-        self.assertEqual(started, [])
-        self.assertFalse(self.server.received.is_set())
-        self.assertIn("left to the camera", "\n".join(captured.output))
-        self.assertIn(result.meta["saved_stem"], "\n".join(captured.output))
-        self.assertTrue(Path(result.meta["orig_path"]).is_file())
+        thread.assert_not_called()
+        urlopen.assert_not_called()
+        self.assertEqual(self.server.requests, [])
+        self.assertEqual(result.image, DREAM)
+        self.assertEqual(Path(result.meta["orig_path"]).read_bytes(), ORIG)
+        self.assertEqual(Path(result.meta["dream_path"]).read_bytes(), DREAM)
+        self.assertIn(
+            f"Gallery upload left to the camera for {result.meta['saved_stem']}",
+            "\n".join(captured.output),
+        )
+        self.assertNotIn(TOKEN, "\n".join(captured.output))
 
     def test_skips_upload_unless_both_env_vars_are_set(self):
         pipe = self._pipeline()

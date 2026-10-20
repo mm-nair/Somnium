@@ -24,7 +24,7 @@ if [[ -n "${SOMNIUM_PROCESS_TOKEN:-}" ]]; then
 else
   echo "  POST /v1/process is open (set SOMNIUM_PROCESS_TOKEN before exposing it)"
 fi
-echo "  Run ./scripts/usb_bridge.sh in another terminal (ESP cooks over USB)."
+echo "  Wi-Fi cook: ./scripts/wifi_bridge.sh    USB cook: ./scripts/usb_bridge.sh"
 echo "  Remote host: server/README.md"
 echo "  providers: xAI prompt + xAI image + Open-Meteo context"
 

@@ -348,7 +348,7 @@ int main() {
             executable = directory / "canvas_flush"
             subprocess.run(
                 [
-                    "c++",
+                    "g++",
                     "-std=c++17",
                     "-Wall",
                     "-Wextra",

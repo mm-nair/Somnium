@@ -196,6 +196,10 @@ def cook_http(
 
 
 def main() -> int:
+    sys.path.insert(0, str(ROOT / "server"))
+    from somnium_server.config import load_dotenv
+
+    load_dotenv()
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "image",
@@ -224,8 +228,8 @@ def main() -> int:
     )
     p.add_argument(
         "--http",
-        default=http_base_from_env(),
-        help="Server base URL when not using --local",
+        default=None,
+        help="Server base URL when not using --local (default: local, or SOMNIUM_SERVER_URL)",
     )
     p.add_argument(
         "--force-real",
@@ -239,6 +243,7 @@ def main() -> int:
         return 1
 
     taken_at = args.taken_at or _iso_now()
+    base_url = args.http or http_base_from_env()
     out_dir = args.out_dir if args.out_dir.is_absolute() else ROOT / args.out_dir
     force_real = args.force_real or True
     rc = 0
@@ -261,7 +266,7 @@ def main() -> int:
                 args.lat,
                 args.lon,
                 force_real,
-                args.http,
+                base_url,
                 out_dir,
             )
         if code != 0:

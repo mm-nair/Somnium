@@ -15,6 +15,7 @@ from usb_bridge import (
     DeviceResetError,
     ProtocolError,
     SerialLineReader,
+    bridge_timeout_seconds,
     default_process_url,
     find_acm_port,
     find_port,
@@ -49,7 +50,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", default="")
     parser.add_argument("--url", default=default_process_url())
-    parser.add_argument("--timeout", type=float, default=240.0)
+    parser.add_argument("--timeout", type=float, default=bridge_timeout_seconds())
     args = parser.parse_args()
     port = args.port or find_acm_port() or find_port(None)
     ser = open_serial(port)
