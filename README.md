@@ -4,7 +4,7 @@
 
 A handheld camera. You pick a look, press the shutter, and the board sends the JPEG to a laptop over USB. The laptop reads the weather, writes an edit for that look, and asks Grok Imagine to repaint the shot. The edited JPEG comes back down the same cable onto a 320×240 screen. The original and the edit both stay on the SD card.
 
-*Somnium* is Latin for "the dream." The second file on the card is named that way: the photo, and the dream of it. The word is also the title of Johannes Kepler's *Somnium* (1634), often called the first science-fiction novel, a dream of a voyage to the Moon and of the Earth seen from there.
+*Somnium* is Latin for "the dream." The word is also the title of Johannes Kepler's *Somnium* (1634), often called the first science-fiction novel, a dream of a voyage to the Moon and of the Earth seen from there.
 
 Photos from the camera are posted at [somnium.photo](https://somnium.photo). The site was built with Cursor and Grok Bot.
 
