@@ -78,6 +78,36 @@ class ProcessErrorTests(unittest.TestCase):
             self.assertIn(str(error), captured.output[0])
             self.assertIsNotNone(captured.records[0].exc_info)
 
+    def test_skip_gallery_form_is_forwarded(self):
+        with patch("somnium_server.config.load_config", return_value={}), patch(
+            "somnium_server.pipeline.Pipeline", return_value=Mock()
+        ):
+            app = importlib.import_module("somnium_server.app")
+        result = Mock(
+            style_id="anime",
+            prompt="ink",
+            image=b"\xff\xd8generated image\xff\xd9",
+            context={"summary": "day"},
+            meta={"orig_path": "/outputs/original.jpg", "dream_path": "/outputs/dream.jpg"},
+        )
+        request = Request({"type": "http", "client": ("127.0.0.1", 1234)})
+        for raw, expected in (("1", True), ("YES", True), ("true", True), ("on", True), (None, False), ("0", False), ("false", False), ("", False)):
+            with self.subTest(raw=raw):
+                image = UploadFile(io.BytesIO(b"\xff\xd8\xff\xd9"))
+                with patch.object(app.pipeline, "process", return_value=result) as process:
+                    response = asyncio.run(app.process(
+                        request=request,
+                        image=image,
+                        style="anime",
+                        taken_at=None,
+                        lat=None,
+                        lon=None,
+                        force_real=None,
+                        skip_gallery=raw,
+                    ))
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(process.call_args.kwargs["skip_gallery"], expected)
+
 
 if __name__ == "__main__":
     unittest.main()

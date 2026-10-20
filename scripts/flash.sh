@@ -28,4 +28,4 @@ fi
 echo "Flashing Somnium → $PORT"
 echo "Restart usb_bridge after flashing."
 pio run -t upload --upload-port "$PORT"
-echo "Done. Then: ./scripts/usb_bridge.sh"
+echo "Done. Wi-Fi bridge reconnects on its own; otherwise: ./scripts/usb_bridge.sh"

@@ -11,9 +11,23 @@
 #include <string.h>
 
 #include "Brand.h"
+#include "Link.h"
 #include "Pages.h"
 
 namespace Somnium {
+namespace {
+bool (*gLinkIsUp)() = nullptr;
+bool (*gDirectCook)() = nullptr;
+}
+
+bool linkConnected() { return gLinkIsUp != nullptr && gLinkIsUp(); }
+
+void linkRegister(bool (*isUp)()) { gLinkIsUp = isUp; }
+
+bool appDirectCook() { return gDirectCook != nullptr && gDirectCook(); }
+
+void appDirectCookRegister(bool (*configured)()) { gDirectCook = configured; }
+
 namespace App {
 namespace {
 
@@ -309,7 +323,13 @@ void runPipeline() {
   // CH340 doesn't fall off the USB bus (kernel error -71 / ACM gone).
   Somnium::Camera::end();
 
-  gProcess.setStatus("usb > thinkpad...");
+  const char *cookStatus = "usb > thinkpad...";
+  if (appDirectCook()) {
+    cookStatus = "wifi > server...";
+  } else if (linkConnected()) {
+    cookStatus = "wifi > thinkpad...";
+  }
+  gProcess.setStatus(cookStatus);
   pumpCookUi();
 
   Somnium::JpegBuffer dream{};

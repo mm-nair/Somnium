@@ -2,7 +2,7 @@
 
 ![The Somnium camera](gallery_1.jpg)
 
-A handheld camera. You pick a look, press the shutter, and the board sends the JPEG to a laptop over USB. The laptop reads the weather, writes an edit for that look, and asks Grok Imagine to repaint the shot. The edited JPEG comes back down the same cable onto a 320×240 screen. The original and the edit both stay on the SD card.
+A handheld camera. You pick a look, press the shutter, and the board sends the JPEG to a laptop over the home Wi-Fi, or over USB when the laptop is not connected. The laptop reads the weather, writes an edit for that look, and asks Grok Imagine to repaint the shot. The edited JPEG comes back the same way onto a 320×240 screen. The original and the edit both stay on the SD card.
 
 *Somnium* is Latin for "the dream." The word is also the title of Johannes Kepler's *Somnium* (1634), often called the first science-fiction novel, a dream of a voyage to the Moon and of the Earth seen from there.
 
@@ -49,6 +49,44 @@ Two things that made the transfer reliable: the serial receive buffer is 64 KB, 
 
 The same port still takes operator commands: `hello`, `capture`, `cooktest`, `sdlist`, `sdpull`, `sdwipe`, and `TIME <epoch>` to set the clock.
 
+## Wi-Fi
+
+The cook uses the same COOK / DREAM bytes over TCP. The board joins the network in `include/wifi_secrets.h`, listens on port 8090, and advertises `somnium.local`. `scripts/wifi_bridge.py` connects, posts the JPEG to `http://127.0.0.1:8080/v1/process`, and sends the edit back. If that socket drops, the bridge connects again and does not replay the cook that was in flight. A shutter press with no Wi-Fi client still uses the USB serial port, so `./scripts/usb_bridge.sh` keeps working. When a Wi-Fi client is connected, the cook goes there.
+
+Operator commands stay on USB. Stop the USB bridge before `sdpull` or flashing; the Wi-Fi bridge does not hold the serial port.
+
+```sh
+cp include/wifi_secrets.example.h include/wifi_secrets.h
+# Set SOMNIUM_WIFI_SSID and SOMNIUM_WIFI_PASSWORD. This file stays out of git.
+
+./scripts/flash.sh
+./scripts/server.sh        # leave this running
+./scripts/wifi_bridge.sh   # leave this running while shooting
+```
+
+An empty SSID leaves Wi-Fi off. The serial log prints `WIFI somnium ip=…` and `WIFI mdns somnium.local` once the board is associated. If the laptop cannot resolve `somnium.local`, pass that address:
+
+```sh
+./scripts/wifi_bridge.sh --host 192.168.1.20
+```
+
+`SOMNIUM_BOARD_HOST` and `SOMNIUM_BOARD_PORT` (default `somnium.local` and `8090`) override the same values. Those names are not the server bind address (`SOMNIUM_HOST` / `SOMNIUM_PORT`). Do not run the USB bridge and the Wi-Fi bridge at the same time.
+
+### Direct server
+
+Leave `SOMNIUM_SERVER_HOST` empty (the example file) and the board keeps the `somnium.local` cook above. No process token is sent.
+
+To cook straight at the public host, copy the example and set the host. `SOMNIUM_SERVER_TLS` `1` opens TLS to port 443 and path `/v1/process`. The board checks the server certificate against the Let's Encrypt ISRG roots and sets the clock from NTP first. The whole POST, including the silent wait for xAI, has to finish within 300 seconds. When `SOMNIUM_PROCESS_TOKEN` is non-empty, the POST includes `X-Somnium-Token`. That value has to match the server. Leave the token empty for an open server. The same names in `.env` (`SOMNIUM_SERVER_URL`, `SOMNIUM_PROCESS_TOKEN`) steer `wifi_bridge.py` and `usb_bridge.py` when you are still using a laptop bridge. The bridge timeout stays under 300 seconds so it can still return an error to the board. Caddy on the VM waits 360 seconds, which is longer than the board, so the proxy is not what ends the cook.
+
+```sh
+cp include/server_config.example.h include/server_config.h
+# host, port 443, SOMNIUM_SERVER_TLS 1, process token. This file stays out of git.
+```
+
+A configured host does not fall back to USB after a failed POST, so one shutter press is one edit. The screen says `wifi > server...`.
+
+Set `SOMNIUM_GALLERY_URL` and `SOMNIUM_GALLERY_TOKEN` in that same file only when the camera should upload the shot. The cook then includes `skip_gallery=1`, and the server does not upload it again. Leave both empty to let the server upload when `SOMNIUM_UPLOAD_URL` and `SOMNIUM_UPLOAD_TOKEN` are set. The gallery token is a different secret from the process token.
+
 ## Photo processing
 
 The server is a FastAPI app with one endpoint, `POST /v1/process`. The body is multipart: `image`, `style`, `taken_at`, and optional `lat` / `lon`. The response body is the edited JPEG. Headers carry the style, a short prompt preview, and the filenames that were saved.
@@ -94,6 +132,8 @@ Code is split like this:
 - `lib/SomniumApp` — the five screens, and the generated mode and theme headers
 - `server/` — the FastAPI pipeline
 - `scripts/usb_bridge.py` — serial to `/v1/process`
+- `scripts/wifi_bridge.py` — the same cook framing over TCP to `/v1/process`
+- `include/server_config.h` — optional direct HTTPS cook (host, TLS, process token)
 
 ## Run
 
@@ -102,13 +142,15 @@ Nix, the ESP32-S3 on USB, and an xAI key.
 ```sh
 nix develop
 cp .env.example .env     # XAI_KEY=...
+cp include/wifi_secrets.example.h include/wifi_secrets.h   # SSID and password
+cp include/server_config.example.h include/server_config.h # optional; empty host = somnium.local
 
 ./scripts/flash.sh
-./scripts/server.sh      # leave this running
-./scripts/usb_bridge.sh  # only while shooting
+./scripts/server.sh       # leave this running
+./scripts/wifi_bridge.sh  # while shooting, over Wi-Fi
 ```
 
-Stop the bridge before flashing or before `./scripts/usb_pull_sd.sh`, which copies `/somnium` into `demos/sd_<timestamp>/`. `./scripts/dev.sh` prints the same checklist.
+USB instead of Wi-Fi: leave the Wi-Fi bridge stopped and run `./scripts/usb_bridge.sh`. Stop that USB bridge before flashing or before `./scripts/usb_pull_sd.sh`, which copies `/somnium` into `demos/sd_<timestamp>/`. A Wi-Fi bridge reconnects by itself after a flash. `./scripts/dev.sh` prints the same checklist.
 
 Offline, with no board attached:
 
