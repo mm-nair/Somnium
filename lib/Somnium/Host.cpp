@@ -4,6 +4,7 @@
 #include <esp_rom_crc.h>
 #include <esp_system.h>
 #include <math.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
@@ -13,6 +14,7 @@
 #include "Config.h"
 #include "Console.h"
 #include "Image.h"
+#include "Link.h"
 #include "Storage.h"
 
 namespace Somnium {
@@ -24,7 +26,40 @@ Host::PumpFn gPump = nullptr;
 char gPollLine[96];
 size_t gPollLen = 0;
 
+void linkNopBegin() {}
+void linkNopPoll() {}
+void linkNopBusy(bool) {}
+bool linkNopClaim(CookPort *) { return false; }
+int linkNopRead() { return -1; }
+void linkNopDrop() {}
+
+bool httpNopConfigured() { return false; }
+bool httpNopCook(const uint8_t *, size_t, const char *, const char *, float, float,
+                 JpegBuffer &, String *err, void (*)()) {
+  if (err != nullptr) {
+    *err = "http off";
+  }
+  return false;
+}
+
+HttpOps &httpOps() {
+  static HttpOps ops = {httpNopConfigured, httpNopCook};
+  return ops;
+}
+
+void applyTime(unsigned long epoch);
+void noteTime(const char *line);
+
+// Function-local so Link.cpp can install ops from a global constructor
+// without racing this default.
+LinkOps &linkOps() {
+  static LinkOps ops = {linkNopBegin, linkNopPoll, linkNopBusy,
+                        linkNopClaim, linkNopRead, linkNopDrop};
+  return ops;
+}
+
 void pump() {
+  linkOps().poll();
   if (gPump != nullptr) {
     gPump();
   } else {
@@ -32,9 +67,83 @@ void pump() {
   }
 }
 
-void drainRx() {
-  while (Serial.available() > 0) {
-    Serial.read();
+int serialAvailable(void *) { return Serial.available(); }
+int serialRead(void *) { return Serial.read(); }
+size_t serialReadBytes(void *, uint8_t *dst, size_t len) {
+  return Serial.readBytes(dst, len);
+}
+size_t serialWrite(void *, const uint8_t *data, size_t len) {
+  return Serial.write(data, len);
+}
+void serialFlush(void *) { Serial.flush(); }
+
+CookPort serialPort() {
+  CookPort port{};
+  port.available = serialAvailable;
+  port.read = serialRead;
+  port.readBytes = serialReadBytes;
+  port.write = serialWrite;
+  port.flush = serialFlush;
+  return port;
+}
+
+bool portWriteAll(const CookPort &port, const uint8_t *data, size_t len) {
+  size_t sent = 0;
+  while (sent < len) {
+    const size_t n = port.write(port.ctx, data + sent, len - sent);
+    if (n == 0) {
+      return false;
+    }
+    sent += n;
+  }
+  return true;
+}
+
+bool portPrint(const CookPort &port, const char *text) {
+  if (text == nullptr) {
+    return true;
+  }
+  return portWriteAll(port, reinterpret_cast<const uint8_t *>(text), strlen(text));
+}
+
+bool portPrintf(const CookPort &port, const char *fmt, ...) {
+  char buffer[192];
+  va_list args;
+  va_start(args, fmt);
+  const int wrote = vsnprintf(buffer, sizeof(buffer), fmt, args);
+  va_end(args);
+  if (wrote <= 0) {
+    return false;
+  }
+  size_t len = static_cast<size_t>(wrote);
+  if (len >= sizeof(buffer)) {
+    len = sizeof(buffer) - 1;
+  }
+  return portWriteAll(port, reinterpret_cast<const uint8_t *>(buffer), len);
+}
+
+void drainRx(const CookPort &port) {
+  char line[96];
+  size_t n = 0;
+  int guard = 0;
+  while (port.available(port.ctx) > 0 && guard < 65536) {
+    const int raw = port.read(port.ctx);
+    if (raw < 0) {
+      break;
+    }
+    ++guard;
+    if (raw == '\r') {
+      continue;
+    }
+    if (raw != '\n') {
+      if (n + 1 < sizeof(line)) {
+        line[n++] = static_cast<char>(raw);
+      }
+      continue;
+    }
+    line[n] = '\0';
+    n = 0;
+    noteTime(line);
   }
 }
 
@@ -55,6 +164,13 @@ void applyTime(unsigned long epoch) {
   settimeofday(&tv, nullptr);
   if (!gCooking) {
     Console::printf("TIME synced %lu\n", epoch);
+  }
+}
+
+void noteTime(const char *line) {
+  unsigned long epoch = 0;
+  if (sscanf(line, "TIME %lu", &epoch) == 1) {
+    applyTime(epoch);
   }
 }
 
@@ -198,27 +314,26 @@ void handleLine(char *line) {
     Serial.flush();
     return;
   }
-
 }
 
-bool readExact(uint8_t *dst, size_t len, uint32_t timeoutMs) {
+bool readExact(const CookPort &port, uint8_t *dst, size_t len, uint32_t timeoutMs) {
   size_t got = 0;
   const unsigned long started = millis();
   while (got < len && millis() - started < timeoutMs) {
-    if (Serial.available() <= 0) {
+    if (port.available(port.ctx) <= 0) {
       yield();
       delay(1);
       continue;
     }
-    const size_t available = static_cast<size_t>(Serial.available());
+    const size_t available = static_cast<size_t>(port.available(port.ctx));
     const size_t remaining = len - got;
-    got += Serial.readBytes(dst + got,
-                            available < remaining ? available : remaining);
+    got += port.readBytes(port.ctx, dst + got,
+                          available < remaining ? available : remaining);
   }
   return got == len;
 }
 
-bool waitDreamHeader(unsigned requestId, unsigned &dreamLen,
+bool waitDreamHeader(const CookPort &port, unsigned requestId, unsigned &dreamLen,
                      unsigned &dreamCrc, String *err) {
   char line[96];
   size_t n = 0;
@@ -227,7 +342,7 @@ bool waitDreamHeader(unsigned requestId, unsigned &dreamLen,
   unsigned long lastPump = started;
 
   while (millis() - started < Defaults::kCookTimeoutMs) {
-    if (Serial.available() <= 0) {
+    if (port.available(port.ctx) <= 0) {
       const unsigned long now = millis();
       if (now - lastPump >= 100) {
         lastPump = now;
@@ -239,7 +354,7 @@ bool waitDreamHeader(unsigned requestId, unsigned &dreamLen,
       continue;
     }
 
-    const char c = static_cast<char>(Serial.read());
+    const char c = static_cast<char>(port.read(port.ctx));
     if (c == '\r') {
       continue;
     }
@@ -291,7 +406,7 @@ bool waitDreamHeader(unsigned requestId, unsigned &dreamLen,
     if (sscanf(line, "DREAM %8x %u %8x %c", &responseId, &len, &crc,
                &extra) == 3) {
       if (responseId != requestId) {
-        Serial.printf("ERR %08x stale cook\n", responseId);
+        portPrintf(port, "ERR %08x stale cook\n", responseId);
         continue;
       }
       if (len < 4 || len > 400000) {
@@ -319,11 +434,52 @@ bool waitDreamHeader(unsigned requestId, unsigned &dreamLen,
   return false;
 }
 
+void pollLinkIdle() {
+  char line[96];
+  size_t n = 0;
+  bool overflow = false;
+  for (;;) {
+    const int raw = linkOps().idleRead();
+    if (raw < 0) {
+      break;
+    }
+    if (raw == '\r') {
+      continue;
+    }
+    if (raw != '\n') {
+      if (n + 1 < sizeof(line)) {
+        line[n++] = static_cast<char>(raw);
+      } else {
+        overflow = true;
+      }
+      continue;
+    }
+    line[n] = '\0';
+    n = 0;
+    if (overflow) {
+      overflow = false;
+      continue;
+    }
+    noteTime(line);
+  }
+}
+
 }  // namespace
+
+void linkBind(const LinkOps &ops) { linkOps() = ops; }
+void httpBind(const HttpOps &ops) { httpOps() = ops; }
+bool httpCookConfigured() { return httpOps().configured(); }
+void linkBegin() { linkOps().begin(); }
+void linkPoll() { linkOps().poll(); }
+void linkSetBusy(bool busy) { linkOps().setBusy(busy); }
+bool linkClaim(CookPort *port) { return linkOps().claim(port); }
+int linkIdleRead() { return linkOps().idleRead(); }
+void linkDrop() { linkOps().drop(); }
 
 void Host::setPump(PumpFn fn) { gPump = fn; }
 
 void Host::poll() {
+  linkPoll();
   if (gCooking) {
     return;
   }
@@ -344,6 +500,7 @@ void Host::poll() {
       handleLine(gPollLine);
     }
   }
+  pollLinkIdle();
 }
 
 bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
@@ -358,24 +515,52 @@ bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
   }
 
   gCooking = true;
+  struct BusyGuard {
+    BusyGuard() { linkSetBusy(true); }
+    ~BusyGuard() { linkSetBusy(false); }
+  } busyGuard;
+  (void)busyGuard;
+
+  if (httpCookConfigured()) {
+    resetPollAssembler();
+    const bool ok = httpOps().cook(jpeg, jpegLen, styleId, takenAt, lat, lon, outDream,
+                                   err, pump);
+    resetPollAssembler();
+    gCooking = false;
+    return ok;
+  }
+
   resetPollAssembler();
-  drainRx();
+  CookPort port{};
+  const bool wifi = linkClaim(&port);
+  if (!wifi) {
+    port = serialPort();
+  }
+  // Finish a clock sync that was already sitting on this pipe, then start clean.
+  drainRx(port);
 
   const unsigned requestId = esp_random();
   const unsigned jpegCrc = esp_rom_crc32_le(0, jpeg, jpegLen);
-  Serial.printf("COOK style=%s len=%u id=%08x crc=%08x",
-                styleId != nullptr ? styleId : "cartoon",
-                static_cast<unsigned>(jpegLen), requestId, jpegCrc);
-  if (takenAt != nullptr && takenAt[0] != '\0') {
-    Serial.printf(" taken_at=%s", takenAt);
+  Console::printf("HOST cook %s\n", wifi ? "wifi" : "usb");
+  bool framed = portPrintf(port, "COOK style=%s len=%u id=%08x crc=%08x",
+                           styleId != nullptr ? styleId : "cartoon",
+                           static_cast<unsigned>(jpegLen), requestId, jpegCrc);
+  if (framed && takenAt != nullptr && takenAt[0] != '\0') {
+    framed = portPrintf(port, " taken_at=%s", takenAt);
   }
-  if (!isnan(lat) && !isnan(lon)) {
-    Serial.printf(" lat=%.5f lon=%.5f", lat, lon);
+  if (framed && !isnan(lat) && !isnan(lon)) {
+    framed = portPrintf(port, " lat=%.5f lon=%.5f", lat, lon);
   }
-  Serial.print("\n");
-  Serial.write(jpeg, jpegLen);
-  Serial.print("\nCOOK_END\n");
-  Serial.flush();
+  if (framed) {
+    framed = portPrint(port, "\n");
+  }
+  if (framed) {
+    framed = portWriteAll(port, jpeg, jpegLen);
+  }
+  if (framed) {
+    framed = portPrint(port, "\nCOOK_END\n");
+  }
+  port.flush(port.ctx);
 
   uint8_t *buf = nullptr;
   auto fail = [&](const char *message) {
@@ -383,18 +568,23 @@ bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
     if (err != nullptr) {
       *err = message;
     }
-    Serial.printf("ERR %08x %s\n", requestId, message);
-    Serial.flush();
-    drainRx();
+    portPrintf(port, "ERR %08x %s\n", requestId, message);
+    port.flush(port.ctx);
+    drainRx(port);
+    linkDrop();
     resetPollAssembler();
     gCooking = false;
     return false;
   };
 
+  if (!framed) {
+    return fail("link write");
+  }
+
   unsigned dreamLen = 0;
   unsigned dreamCrc = 0;
   String headerErr;
-  if (!waitDreamHeader(requestId, dreamLen, dreamCrc, &headerErr)) {
+  if (!waitDreamHeader(port, requestId, dreamLen, dreamCrc, &headerErr)) {
     return fail(headerErr.c_str());
   }
 
@@ -406,15 +596,17 @@ bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
     return fail("oom dream");
   }
 
-  Serial.printf("READY DREAM %08x\n", requestId);
-  Serial.flush();
-  if (!readExact(buf, dreamLen, 60000)) {
+  if (!portPrintf(port, "READY DREAM %08x\n", requestId)) {
+    return fail("link write");
+  }
+  port.flush(port.ctx);
+  if (!readExact(port, buf, dreamLen, 60000)) {
     return fail("dream short");
   }
 
   const char expectedTrailer[] = "\nDREAM_END\n";
   uint8_t trailer[sizeof(expectedTrailer) - 1];
-  if (!readExact(trailer, sizeof(trailer), 5000) ||
+  if (!readExact(port, trailer, sizeof(trailer), 5000) ||
       memcmp(trailer, expectedTrailer, sizeof(trailer)) != 0) {
     return fail("dream trailer");
   }
@@ -430,8 +622,8 @@ bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
   outDream.crc32 = dreamCrc;
   resetPollAssembler();
   gCooking = false;
-  Serial.printf("ACK DREAM %08x\n", requestId);
-  Serial.flush();
+  portPrintf(port, "ACK DREAM %08x\n", requestId);
+  port.flush(port.ctx);
   Console::printf("HOST DREAM %u B crc=%08x\n", dreamLen, dreamCrc);
   return true;
 }

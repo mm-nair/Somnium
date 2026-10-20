@@ -6,6 +6,8 @@
 server/outputs/
 proc_output/
 .env
+include/wifi_secrets.h
+include/server_config.h
 *.jpg
 !creative/**/*.jpg
 compile_commands.json

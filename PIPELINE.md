@@ -1,10 +1,10 @@
 # Pipeline
 
 ```
-JPEG + style  (USB COOK from ESP)
+JPEG + style  (COOK from ESP, over USB serial or TCP :8090)
         │
         ▼
- usb_bridge.py  →  POST /v1/process on localhost
+ usb_bridge.py or wifi_bridge.py  →  POST /v1/process on localhost
         │
         ▼
  Context (Open-Meteo weather / day-night + local moon mood)
@@ -59,6 +59,26 @@ The bridge reports acceptance only after that ACK. A reset or disconnect
 aborts the current transfer; reconnecting never replays its binary payload.
 Flash firmware and restart the bridge together when updating this protocol.
 
+The same bytes run over TCP when a laptop is connected to the board. The
+board listens on port 8090 and advertises `somnium.local`.
+`scripts/wifi_bridge.py` is the TCP peer; `scripts/usb_bridge.py` remains the
+USB peer. A cook uses Wi-Fi when that client is connected, and USB otherwise.
+Wi-Fi name and password live in `include/wifi_secrets.h` (see
+`include/wifi_secrets.example.h`), not in git.
+
+An empty `SOMNIUM_SERVER_HOST` in `include/server_config.h` keeps that path
+and sends no process token. A non-empty host makes the board POST
+`/v1/process` itself. `SOMNIUM_SERVER_TLS 1` is HTTPS on the configured port
+(443 for a public host such as Fly). `SOMNIUM_PROCESS_TOKEN`, when set, is
+the `X-Somnium-Token` header. The laptop bridges read the same token and
+`SOMNIUM_SERVER_URL` from the environment.
+
+When the camera has both a gallery URL and a gallery token, the cook form
+includes `skip_gallery=1` and the camera uploads the shot. The server honors
+that field (`1`, `true`, `yes`, or `on`) and does not start its own gallery
+upload. With the camera gallery settings empty, the server uploads once when
+its upload URL and token are set.
+
 ## Firmware JPEG decoding
 
 Use TJpg_Decoder throughout the display path with native RGB565 pixels.
@@ -93,6 +113,7 @@ Response: JPEG + headers `X-Somnium-Prompt`, `X-Somnium-Context`, …
 | Modes / prompts / theme / providers | `creative/creative.json` |
 | Venue, API base URLs, model ids | `server/settings.json` |
 | API key | `.env` → `XAI_KEY` |
+| Wi-Fi SSID / password | `include/wifi_secrets.h` (gitignored) |
 
 ## Camera-free cook
 

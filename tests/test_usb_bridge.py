@@ -1,5 +1,6 @@
 import binascii
 import io
+import os
 import sys
 import unittest
 import urllib.error
@@ -164,6 +165,73 @@ class UsbBridgeTests(unittest.TestCase):
             self.process_cook(ser)
         self.assertEqual(len(ser.writes), 1)
         self.assertTrue(ser.writes[0].startswith(b"ERR 1234abcd "))
+
+    def test_process_token_header_is_sent_only_when_set(self):
+        seen = {}
+
+        class Response:
+            def read(self):
+                return self.jpeg if False else b"\xff\xd8ok\xff\xd9"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def capture(req, timeout=None):
+            del timeout
+            seen["headers"] = {key.lower(): value for key, value in req.header_items()}
+            seen["data"] = req.data
+            return Response()
+
+        jpeg = b"\xff\xd8hi\xff\xd9"
+        env = os.environ.copy()
+        env.pop("SOMNIUM_PROCESS_TOKEN", None)
+        with patch.dict(os.environ, env, clear=True), patch.object(
+            usb_bridge.urllib.request, "urlopen", capture
+        ):
+            usb_bridge.post_process(
+                jpeg,
+                style="anime",
+                taken_at="2026-10-20T00:00:00Z",
+                lat=None,
+                lon=None,
+                url="http://127.0.0.1:8080/v1/process",
+                timeout=1,
+            )
+        self.assertNotIn("x-somnium-token", seen["headers"])
+        self.assertNotIn(b"X-Somnium-Token", seen["data"])
+
+        with patch.dict(os.environ, {"SOMNIUM_PROCESS_TOKEN": "s3cret"}), patch.object(
+            usb_bridge.urllib.request, "urlopen", capture
+        ):
+            usb_bridge.post_process(
+                jpeg,
+                style="anime",
+                taken_at="2026-10-20T00:00:00Z",
+                lat=None,
+                lon=None,
+                url="http://127.0.0.1:8080/v1/process",
+                timeout=1,
+            )
+        self.assertEqual(seen["headers"].get("x-somnium-token"), "s3cret")
+        self.assertEqual(seen["data"].count(b"s3cret"), 0)
+        with patch.dict(os.environ, {"SOMNIUM_SERVER_URL": ""}, clear=False):
+            os.environ.pop("SOMNIUM_SERVER_URL", None)
+            self.assertEqual(
+                usb_bridge.default_process_url(), "http://127.0.0.1:8080/v1/process"
+            )
+        with patch.dict(os.environ, {"SOMNIUM_SERVER_URL": "https://app.fly.dev"}):
+            self.assertEqual(
+                usb_bridge.default_process_url(), "https://app.fly.dev/v1/process"
+            )
+        with patch.dict(
+            os.environ, {"SOMNIUM_SERVER_URL": "https://app.fly.dev/v1/process/"}
+        ):
+            self.assertEqual(
+                usb_bridge.default_process_url(), "https://app.fly.dev/v1/process"
+            )
 
     def test_backend_http_error_body_reaches_terminal_and_device(self):
         for body, expected in (

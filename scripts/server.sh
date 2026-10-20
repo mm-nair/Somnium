@@ -18,7 +18,7 @@ fi
 export PYTHONPATH="$ROOT/server${PYTHONPATH:+:$PYTHONPATH}"
 
 echo "Somnium server on http://127.0.0.1:8080"
-echo "  Run ./scripts/usb_bridge.sh in another terminal (ESP cooks over USB)."
+echo "  Run ./scripts/wifi_bridge.sh in another terminal (or usb_bridge.sh over USB)."
 echo "  providers: xAI prompt + xAI image + Open-Meteo context"
 
 exec python -m somnium_server.app

@@ -7,6 +7,7 @@
 #include "Host.h"
 #include "Image.h"
 #include "Inputs.h"
+#include "Link.h"
 #include "Storage.h"
 
 namespace Somnium {
@@ -21,6 +22,9 @@ inline bool begin() {
   Console::println("storage");
   const bool cameraOk = Camera::begin(Defaults::kCameraWidth);
   Console::println(cameraOk ? "camera ok" : "camera fail");
+  linkAnchor();
+  httpAnchor();
+  linkBegin();
   Console::println("READY usb-cook");
   return cameraOk;
 }

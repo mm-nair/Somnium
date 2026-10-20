@@ -16,6 +16,14 @@ app = FastAPI(title="Somnium Server", version="0.2.0")
 logger = logging.getLogger("uvicorn.error")
 
 
+def form_flag(value: object) -> bool:
+    # Direct calls (tests) leave the Form() default in place. Only a real
+    # string field can ask the server to skip its gallery upload.
+    if not isinstance(value, str):
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def header_preview(text: str, limit: int = 512) -> str:
     text = text.encode("ascii", "replace").decode("ascii")
     text = "".join(character if 32 <= ord(character) <= 126 else " " for character in text)
@@ -43,13 +51,14 @@ async def process(
     lat: Optional[float] = Form(None),
     lon: Optional[float] = Form(None),
     force_real: Optional[str] = Form(None),
+    skip_gallery: Optional[str] = Form(None),
 ):
     raw = await image.read()
     if len(raw) < 4 or raw[:2] != b"\xff\xd8":
         return JSONResponse({"error": "expected JPEG"}, status_code=400)
 
     client_ip = request.client.host if request.client else None
-    force = (force_real or "").lower() in ("1", "true", "yes", "on")
+    force = form_flag(force_real)
     try:
         result = pipeline.process(
             image=raw,
@@ -59,6 +68,7 @@ async def process(
             lat=lat,
             lon=lon,
             force_real=force,
+            skip_gallery=form_flag(skip_gallery),
         )
     except Exception as err:  # noqa: BLE001 — edge client gets a clean error
         logger.exception("Processing failed for style=%s", style)
