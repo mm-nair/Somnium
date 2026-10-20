@@ -9,10 +9,18 @@ Writes:
   lib/SomniumApp/Modes.h
   lib/SomniumApp/CreativeGen.h   (theme + font macro)
   lib/SomniumApp/LogoBitmap.h    (from creative/logo.png)
+  lib/SomniumApp/ModeBitmaps.h   (from modes[].preview)
+
+Check the committed headers still match the catalog:
+
+  python tools/sync_creative.py --check
+  python tools/sync_creative.py --check --headers-only
 """
 
 from __future__ import annotations
 
+import argparse
+import difflib
 import json
 import sys
 from pathlib import Path
@@ -21,6 +29,9 @@ ROOT = Path(__file__).resolve().parents[1]
 CREATIVE_DIR = ROOT / "creative"
 CREATIVE_JSON = CREATIVE_DIR / "creative.json"
 APP = ROOT / "lib" / "SomniumApp"
+# Gallery labels are "{label}-raw" in a 20-byte buffer (19 characters + NUL).
+MAX_LABEL_CHARS = 15
+MAX_ID_CHARS = 15
 
 
 def rgb565(rgb: list[int]) -> int:
@@ -33,9 +44,10 @@ def validate_firmware_text(modes: list[dict], brand: dict) -> bool:
         ("brand.name", brand.get("name", "Somnium")),
         ("brand.tagline", brand.get("tagline", "")),
     ]
+    seen_ids: set[str] = set()
     for index, mode in enumerate(modes):
         for field in ("id", "label"):
-            firmware_text_fields.append((f"modes[{index}].{field}", mode[field]))
+            firmware_text_fields.append((f"modes[{index}].{field}", mode.get(field)))
     for field, value in firmware_text_fields:
         if not isinstance(value, str) or any(
             not 32 <= ord(character) <= 126 for character in value
@@ -46,10 +58,43 @@ def validate_firmware_text(modes: list[dict], brand: dict) -> bool:
                 file=sys.stderr,
             )
             return False
+    for index, mode in enumerate(modes):
+        mode_id = mode["id"]
+        label = mode["label"]
+        if mode_id in seen_ids:
+            print(f"modes[{index}].id {mode_id!r} is duplicated", file=sys.stderr)
+            return False
+        seen_ids.add(mode_id)
+        if not mode_id.isascii() or not mode_id.replace("_", "").isalnum():
+            print(
+                f"modes[{index}].id {mode_id!r} must be letters, digits, and underscores",
+                file=sys.stderr,
+            )
+            return False
+        if mode_id != mode_id.lower():
+            print(
+                f"modes[{index}].id {mode_id!r} must be lowercase "
+                "(it is the USB style token and the SD filename prefix)",
+                file=sys.stderr,
+            )
+            return False
+        if not (1 <= len(mode_id) <= MAX_ID_CHARS):
+            print(
+                f"modes[{index}].id {mode_id!r} must be 1..{MAX_ID_CHARS} characters",
+                file=sys.stderr,
+            )
+            return False
+        if not (1 <= len(label) <= MAX_LABEL_CHARS):
+            print(
+                f"modes[{index}].label {label!r} must be 1..{MAX_LABEL_CHARS} characters "
+                "so the gallery can store \"LABEL-raw\"",
+                file=sys.stderr,
+            )
+            return False
     return True
 
 
-def write_modes(modes: list[dict]) -> None:
+def modes_source(modes: list[dict]) -> str:
     lines = [
         "#pragma once",
         "",
@@ -57,6 +102,7 @@ def write_modes(modes: list[dict]) -> None:
         "// Source: creative/creative.json",
         "",
         "#include <Arduino.h>",
+        "#include <string.h>",
         '#include "ModeBitmaps.h"',
         "",
         "namespace Somnium {",
@@ -89,16 +135,38 @@ def write_modes(modes: list[dict]) -> None:
         "  return kModes[i];",
         "}",
         "",
+        "// Display name for a creative.json id. Unknown ids (old SD files) read as PLATE.",
+        "inline const Mode *findMode(const char *id) {",
+        "  if (id == nullptr) {",
+        "    return nullptr;",
+        "  }",
+        "  for (int i = 0; i < kModeCount; ++i) {",
+        "    if (strcmp(kModes[i].id, id) == 0) {",
+        "      return &kModes[i];",
+        "    }",
+        "  }",
+        "  return nullptr;",
+        "}",
+        "",
+        "inline const char *labelForId(const char *id) {",
+        "  const Mode *mode = findMode(id);",
+        "  return mode != nullptr ? mode->label : \"PLATE\";",
+        "}",
+        "",
         "}  // namespace App",
         "}  // namespace Somnium",
         "",
     ]
+    return "\n".join(lines)
+
+
+def write_modes(modes: list[dict]) -> None:
     path = APP / "Modes.h"
-    path.write_text("\n".join(lines))
+    path.write_text(modes_source(modes))
     print("wrote", path.relative_to(ROOT))
 
 
-def write_mode_previews(modes: list[dict]) -> None:
+def mode_previews_source(modes: list[dict]) -> str:
     from PIL import Image, ImageOps
 
     width, height = 138, 82
@@ -124,12 +192,16 @@ def write_mode_previews(modes: list[dict]) -> None:
         for offset in range(0, len(pixels), 12):
             lines.append(",".join(pixels[offset:offset + 12]) + ",")
         lines.append("};")
+    return "\n".join(lines) + "\n"
+
+
+def write_mode_previews(modes: list[dict]) -> None:
     path = APP / "ModeBitmaps.h"
-    path.write_text("\n".join(lines) + "\n")
+    path.write_text(mode_previews_source(modes))
     print("wrote", path.relative_to(ROOT))
 
 
-def write_theme(theme: dict, ui: dict, brand: dict) -> None:
+def theme_source(theme: dict, ui: dict, brand: dict) -> str:
     font = ui.get("font", "FreeSerifBoldItalic12pt7b")
     name = brand.get("name", "Somnium")
     tag = brand.get("tagline", "")
@@ -165,28 +237,27 @@ def write_theme(theme: dict, ui: dict, brand: dict) -> None:
         "}  // namespace Somnium",
         "",
     ]
+    return "\n".join(lines)
+
+
+def write_theme(theme: dict, ui: dict, brand: dict) -> None:
     path = APP / "CreativeGen.h"
-    path.write_text("\n".join(lines))
+    path.write_text(theme_source(theme, ui, brand))
     print("wrote", path.relative_to(ROOT))
 
 
-def write_logo(ui: dict) -> None:
+def logo_source(ui: dict) -> str | None:
     logo_name = ui.get("logo", "logo.png")
     logo_path = CREATIVE_DIR / logo_name
     if not logo_path.is_file():
-        # Fallback to assets/
         alt = ROOT / "assets" / "somnium_logo.png"
         if alt.is_file():
             logo_path = alt
         else:
             print(f"skip logo: missing {logo_name}", file=sys.stderr)
-            return
+            return None
 
-    try:
-        from PIL import Image
-    except ImportError:
-        print("skip logo: pillow not installed", file=sys.stderr)
-        return
+    from PIL import Image
 
     max_w = int(ui.get("logo_max_w", 160))
     max_h = int(ui.get("logo_max_h", 56))
@@ -201,12 +272,11 @@ def write_logo(ui: dict) -> None:
                 r = g = b = 0
             pixels.append(f"0x{rgb565([r, g, b]):04X}")
 
-    # 12 values per line
     body_lines = []
     for i in range(0, len(pixels), 12):
         body_lines.append(",".join(pixels[i : i + 12]) + ",")
 
-    text = (
+    return (
         "#pragma once\n"
         "#include <Arduino.h>\n"
         "// GENERATED by tools/sync_creative.py — do not edit by hand.\n"
@@ -217,24 +287,116 @@ def write_logo(ui: dict) -> None:
         + "\n".join(body_lines)
         + "\n};\n"
     )
+
+
+def write_logo(ui: dict) -> None:
+    try:
+        text = logo_source(ui)
+    except ImportError:
+        print("skip logo: pillow not installed", file=sys.stderr)
+        return
+    if text is None:
+        return
     path = APP / "LogoBitmap.h"
     path.write_text(text)
-    print("wrote", path.relative_to(ROOT), f"({w}x{h})")
+    print("wrote", path.relative_to(ROOT))
 
 
-def main() -> int:
+def _matches(path: Path, expected: str) -> bool:
+    current = path.read_text() if path.is_file() else ""
+    if current == expected:
+        return True
+    print(f"drift: {path.relative_to(ROOT)}", file=sys.stderr)
+    if len(current) < 20000 and len(expected) < 20000:
+        diff = difflib.unified_diff(
+            current.splitlines(),
+            expected.splitlines(),
+            fromfile=str(path.relative_to(ROOT)),
+            tofile="creative.json",
+            lineterm="",
+            n=2,
+        )
+        for index, line in enumerate(diff):
+            if index > 60:
+                print("...", file=sys.stderr)
+                break
+            print(line, file=sys.stderr)
+    else:
+        print("  regenerated bytes differ from the committed header", file=sys.stderr)
+    return False
+
+
+def check_creative(data: dict, headers_only: bool) -> bool:
+    modes = data.get("modes") or []
+    brand = data.get("brand") or {}
+    ui = data.get("ui") or {}
+    theme = data.get("theme") or {}
+    if not validate_firmware_text(modes, brand):
+        return False
+    ok = _matches(APP / "Modes.h", modes_source(modes))
+    ok = _matches(APP / "CreativeGen.h", theme_source(theme, ui, brand)) and ok
+    if headers_only:
+        return ok
+    try:
+        previews = mode_previews_source(modes)
+        logo = logo_source(ui)
+    except ImportError:
+        print("bitmap check needs pillow", file=sys.stderr)
+        return False
+    ok = _matches(APP / "ModeBitmaps.h", previews) and ok
+    if logo is None:
+        print("bitmap check needs the logo image", file=sys.stderr)
+        return False
+    ok = _matches(APP / "LogoBitmap.h", logo) and ok
+    return ok
+
+
+def load_creative() -> dict:
     if not CREATIVE_JSON.is_file():
-        print(f"missing {CREATIVE_JSON}", file=sys.stderr)
+        raise FileNotFoundError(CREATIVE_JSON)
+    return json.loads(CREATIVE_JSON.read_text())
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="fail if generated headers differ from creative.json",
+    )
+    parser.add_argument(
+        "--headers-only",
+        action="store_true",
+        help="with --check, compare Modes.h and CreativeGen.h only (no Pillow)",
+    )
+    args = parser.parse_args(argv)
+    try:
+        data = load_creative()
+    except FileNotFoundError as exc:
+        print(f"missing {exc}", file=sys.stderr)
         return 1
-    data = json.loads(CREATIVE_JSON.read_text())
     modes = data.get("modes") or []
     if not modes:
         print("creative.json has no modes", file=sys.stderr)
         return 1
     brand = data.get("brand") or {}
+    if args.check:
+        if check_creative(data, args.headers_only):
+            scope = "headers" if args.headers_only else "headers and bitmaps"
+            print(f"creative check ok ({scope})")
+            return 0
+        print(
+            "creative.json drifted — run ./scripts/sync_creative.sh and review the diff",
+            file=sys.stderr,
+        )
+        return 1
     if not validate_firmware_text(modes, brand):
         return 1
-    write_mode_previews(modes)
+    try:
+        write_mode_previews(modes)
+    except ImportError:
+        print("skip previews: pillow not installed", file=sys.stderr)
+        return 1
     write_modes(modes)
     write_theme(data.get("theme") or {}, data.get("ui") or {}, brand)
     write_logo(data.get("ui") or {})

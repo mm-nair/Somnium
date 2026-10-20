@@ -4,6 +4,7 @@
 // Source: creative/creative.json
 
 #include <Arduino.h>
+#include <string.h>
 #include "ModeBitmaps.h"
 
 namespace Somnium {
@@ -31,6 +32,24 @@ inline const Mode &modeAt(int index) {
     i += kModeCount;
   }
   return kModes[i];
+}
+
+// Display name for a creative.json id. Unknown ids (old SD files) read as PLATE.
+inline const Mode *findMode(const char *id) {
+  if (id == nullptr) {
+    return nullptr;
+  }
+  for (int i = 0; i < kModeCount; ++i) {
+    if (strcmp(kModes[i].id, id) == 0) {
+      return &kModes[i];
+    }
+  }
+  return nullptr;
+}
+
+inline const char *labelForId(const char *id) {
+  const Mode *mode = findMode(id);
+  return mode != nullptr ? mode->label : "PLATE";
 }
 
 }  // namespace App

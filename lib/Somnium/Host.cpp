@@ -20,6 +20,13 @@ namespace {
 
 bool gCooking = false;
 Host::PumpFn gPump = nullptr;
+Host::ProgressFn gProgress = nullptr;
+
+void noteStage(const char *stage) {
+  if (gProgress != nullptr && stage != nullptr) {
+    gProgress(stage);
+  }
+}
 
 char gPollLine[96];
 size_t gPollLen = 0;
@@ -323,6 +330,8 @@ bool waitDreamHeader(unsigned requestId, unsigned &dreamLen,
 
 void Host::setPump(PumpFn fn) { gPump = fn; }
 
+void Host::setProgress(ProgressFn fn) { gProgress = fn; }
+
 void Host::poll() {
   if (gCooking) {
     return;
@@ -360,6 +369,7 @@ bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
   gCooking = true;
   resetPollAssembler();
   drainRx();
+  noteStage("send");
 
   const unsigned requestId = esp_random();
   const unsigned jpegCrc = esp_rom_crc32_le(0, jpeg, jpegLen);
@@ -376,6 +386,7 @@ bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
   Serial.write(jpeg, jpegLen);
   Serial.print("\nCOOK_END\n");
   Serial.flush();
+  noteStage("style");
 
   uint8_t *buf = nullptr;
   auto fail = [&](const char *message) {
@@ -397,6 +408,7 @@ bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
   if (!waitDreamHeader(requestId, dreamLen, dreamCrc, &headerErr)) {
     return fail(headerErr.c_str());
   }
+  noteStage("receive");
 
   buf = static_cast<uint8_t *>(ps_malloc(dreamLen));
   if (buf == nullptr) {
