@@ -169,7 +169,7 @@ Wire format: [PIPELINE.md](https://github.com/mm-nair/Somnium/blob/main/PIPELINE
 
 ## Built with
 
-ESP32-S3, PlatformIO, FastAPI, xAI Grok, Open-Meteo, Nix. Public gallery: [somnium.photo](https://somnium.photo).
+ESP32-S3, PlatformIO, FastAPI, xAI Grok, Open-Meteo, Nix. Public gallery: [somnium.photo](https://somgram.photo).
 
 ## Gallery upload
 
