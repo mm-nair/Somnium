@@ -21,6 +21,8 @@ class Canvas {
 
   void beginFrame();
   void endFrame();
+  // Next endFrame sends the whole panel. Used after the display wakes.
+  void invalidate();
 
   void setOrigin(int16_t x, int16_t y);
   Point origin() const { return Point(originX_, originY_); }

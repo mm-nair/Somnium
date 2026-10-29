@@ -35,6 +35,7 @@ class ModePage : public Somnium::Ui::Page {
   void clearOpenStorage() { openStorage_ = false; }
 
   void nudge(int delta);
+  void selectId(const char *id);
 
  private:
   void drawHeaderOnly(Somnium::Ui::Canvas &c);
@@ -121,7 +122,7 @@ class PreviewPage : public Somnium::Ui::Page {
   bool decodePending_ = false;
   bool allowDecode_ = false;
   bool previewPresented_ = false;
-  uint32_t reviewStartedMs_ = 0;
+  uint32_t reviewElapsed_ = 0;
   uint32_t clockMs_ = 0;
 };
 

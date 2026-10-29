@@ -172,6 +172,19 @@ void Navigator::drawTransition() {
   }
 }
 
+void Navigator::invalidate() {
+  needsDraw_ = true;
+  if (canvas_ != nullptr) {
+    canvas_->invalidate();
+  }
+  Page *page = current();
+  if (page != nullptr) {
+    page->markDirty();
+  }
+}
+
+void Navigator::rebaseClock() { lastMs_ = 0; }
+
 void Navigator::draw() {
   if (canvas_ == nullptr || !needsDraw_) {
     return;

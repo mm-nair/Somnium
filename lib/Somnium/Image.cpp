@@ -47,15 +47,19 @@ bool Image::looksLikeJpeg(const uint8_t *data, size_t length) {
   return false;
 }
 
-bool Image::drawJpeg(const uint8_t *data, size_t length, Adafruit_GFX *target) {
+bool Image::drawJpeg(const uint8_t *data, size_t length, Adafruit_GFX *target,
+                     uint8_t jpgScale) {
   if (!looksLikeJpeg(data, length)) {
     return false;
+  }
+  if (jpgScale != 1 && jpgScale != 2 && jpgScale != 4 && jpgScale != 8) {
+    jpgScale = 1;
   }
   if (target == nullptr && !Display::ready()) {
     return false;
   }
   gJpegTarget = target;
-  TJpgDec.setJpgScale(1);
+  TJpgDec.setJpgScale(jpgScale);
   TJpgDec.setSwapBytes(false);
   TJpgDec.setCallback(jpegDrawToken);
   const bool ok = TJpgDec.drawJpg(0, 0, data, length) == JDR_OK;
@@ -77,8 +81,19 @@ bool Image::decodeRgb565(const uint8_t *data, size_t length, uint16_t *out,
     return false;
   }
 
+  uint8_t scale = 1;
+  while (scale < 8) {
+    const uint32_t pixels =
+        (static_cast<uint32_t>(jpgW) / scale) * (static_cast<uint32_t>(jpgH) / scale);
+    if (pixels * 2u <= 160000u) {
+      break;
+    }
+    scale = static_cast<uint8_t>(scale * 2);
+  }
+  const int16_t srcW = static_cast<int16_t>(jpgW / scale);
+  const int16_t srcH = static_cast<int16_t>(jpgH / scale);
   const size_t nativeBytes =
-      static_cast<size_t>(jpgW) * static_cast<size_t>(jpgH) * 2;
+      static_cast<size_t>(srcW) * static_cast<size_t>(srcH) * 2;
   auto *native = static_cast<uint8_t *>(
       heap_caps_malloc(nativeBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   if (native == nullptr) {
@@ -104,28 +119,26 @@ bool Image::decodeRgb565(const uint8_t *data, size_t length, uint16_t *out,
     int16_t w_;
     int16_t h_;
   };
-  BufGfx gfx(static_cast<int16_t>(jpgW), static_cast<int16_t>(jpgH),
-             reinterpret_cast<uint16_t *>(native));
-  const bool decoded = drawJpeg(data, length, &gfx);
+  BufGfx gfx(srcW, srcH, reinterpret_cast<uint16_t *>(native));
+  const bool decoded = drawJpeg(data, length, &gfx, scale);
   if (!decoded) {
     free(native);
     return false;
   }
 
   auto *src = reinterpret_cast<const uint16_t *>(native);
-  if (jpgW == static_cast<uint16_t>(outW) &&
-      jpgH == static_cast<uint16_t>(outH)) {
+  if (srcW == outW && srcH == outH) {
     memcpy(out, src, nativeBytes);
     free(native);
     return true;
   }
 
-  // Letterbox (portrait 240x320 → landscape 320x240 LCD).
-  const float scaleX = static_cast<float>(outW) / static_cast<float>(jpgW);
-  const float scaleY = static_cast<float>(outH) / static_cast<float>(jpgH);
+  // Letterbox onto the 240x135 panel (or a smaller BLE preview).
+  const float scaleX = static_cast<float>(outW) / static_cast<float>(srcW);
+  const float scaleY = static_cast<float>(outH) / static_cast<float>(srcH);
   const float s = scaleX < scaleY ? scaleX : scaleY;
-  const int16_t dw = static_cast<int16_t>(jpgW * s + 0.5f);
-  const int16_t dh = static_cast<int16_t>(jpgH * s + 0.5f);
+  const int16_t dw = static_cast<int16_t>(srcW * s + 0.5f);
+  const int16_t dh = static_cast<int16_t>(srcH * s + 0.5f);
   const int16_t ox = static_cast<int16_t>((outW - dw) / 2);
   const int16_t oy = static_cast<int16_t>((outH - dh) / 2);
   const size_t outN = static_cast<size_t>(outW) * static_cast<size_t>(outH);
@@ -134,12 +147,12 @@ bool Image::decodeRgb565(const uint8_t *data, size_t length, uint16_t *out,
   }
   for (int16_t y = 0; y < dh; ++y) {
     const int16_t sy =
-        static_cast<int16_t>((static_cast<int32_t>(y) * jpgH) / dh);
+        static_cast<int16_t>((static_cast<int32_t>(y) * srcH) / dh);
     for (int16_t x = 0; x < dw; ++x) {
       const int16_t sx =
-          static_cast<int16_t>((static_cast<int32_t>(x) * jpgW) / dw);
+          static_cast<int16_t>((static_cast<int32_t>(x) * srcW) / dw);
       out[static_cast<int32_t>(oy + y) * outW + (ox + x)] =
-          src[static_cast<int32_t>(sy) * jpgW + sx];
+          src[static_cast<int32_t>(sy) * srcW + sx];
     }
     if ((y & 15) == 0) {
       yield();

@@ -42,6 +42,18 @@ void Ui::tick() {
   draw();
 }
 
+void Ui::invalidate() {
+  if (ready_) {
+    navigator_.invalidate();
+  }
+}
+
+void Ui::rebaseClock() {
+  if (ready_) {
+    navigator_.rebaseClock();
+  }
+}
+
 Canvas &Ui::canvas() { return canvas_; }
 
 Navigator &Ui::navigator() { return navigator_; }

@@ -69,6 +69,8 @@ void Canvas::bind(Adafruit_SPITFT *tft, int16_t width, int16_t height) {
   frameOpen_ = false;
 }
 
+void Canvas::invalidate() { presentedFrameValid_ = false; }
+
 void Canvas::beginFrame() {
   gfx_ = fb_ != nullptr ? fb_ : static_cast<Adafruit_GFX *>(tft_);
   resetOrigin();

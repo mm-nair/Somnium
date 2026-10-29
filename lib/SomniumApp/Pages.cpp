@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <Ble.h>
+
 #include "Brand.h"
 #include "Chrono.h"
 #include "KitchenAnim.h"
@@ -67,18 +69,21 @@ void BootPage::update(uint32_t dtMs) {
 
 void BootPage::draw(Somnium::Ui::Canvas &c) {
   c.clear(T().bg);
-  Brand::drawLogo(c, static_cast<int16_t>((c.width() - kLogoW) / 2), 28);
+  // 160x56 logo on a 240x135 panel. The kitchen trio sits under it.
+  Brand::drawLogo(c, static_cast<int16_t>((c.width() - kLogoW) / 2), 0);
 
-  // Same L→R trio as Process: fire · salt · whisk
-  KitchenAnim::drawFire(c, 72, 110, elapsed_, T().pinkDim);
-  KitchenAnim::drawSalt(c, 160, 110, elapsed_, T().text);
-  KitchenAnim::drawWhisk(c, 248, 110, elapsed_ + 200, T().pinkDim);
+  const int16_t mid = static_cast<int16_t>(c.width() / 2);
+  KitchenAnim::drawFire(c, static_cast<int16_t>(mid - 70), 96, elapsed_, T().pinkDim);
+  KitchenAnim::drawSalt(c, mid, 96, elapsed_, T().text);
+  KitchenAnim::drawWhisk(c, static_cast<int16_t>(mid + 70), 96, elapsed_ + 200,
+                         T().pinkDim);
 
   const float p = static_cast<float>(elapsed_) / static_cast<float>(kBootMs);
-  Text::drawIn(c, bootStage(elapsed_), Rect(0, 168, c.width(), 16),
-               mutedCenter());
-  KitchenAnim::drawProgressPill(c, Rect(40, 198, 240, 14), p, T().text,
-                                T().surface);
+  Text::drawIn(c, bootStage(elapsed_), Rect(0, 58, c.width(), 10), mutedCenter());
+  KitchenAnim::drawProgressPill(
+      c, Rect(20, static_cast<int16_t>(c.height() - 16), static_cast<int16_t>(c.width() - 40),
+              10),
+      p, T().text, T().surface);
 }
 
 void ModePage::onEnter() {
@@ -90,6 +95,21 @@ void ModePage::onEnter() {
   slideTween_ = Somnium::Ui::Tween();
   clockMs_ = 0;
   markDirty();
+}
+
+void ModePage::selectId(const char *id) {
+  if (id == nullptr) {
+    return;
+  }
+  for (int i = 0; i < kModeCount; ++i) {
+    if (strcmp(modeAt(i).id, id) == 0) {
+      index_ = i;
+      slide_ = 0;
+      slideTween_ = Somnium::Ui::Tween();
+      markDirty();
+      return;
+    }
+  }
 }
 
 void ModePage::nudge(int delta) {
@@ -158,18 +178,19 @@ bool ModePage::handleAction(Somnium::Ui::NavAction action) {
 void ModePage::drawHeaderOnly(Somnium::Ui::Canvas &c) {
   char when[32];
   Chrono::formatDateTime(when, sizeof(when));
-  Brand::drawHeader(c, T(), "Storage", true, when);
+  Brand::drawHeader(c, T(), "Somnium", Somnium::Ble::connected(), when);
 }
 
 void ModePage::drawPanel(Somnium::Ui::Canvas &c, int modeIndex, float slot,
                          float slide) {
   const float xNorm = slot + slide;
   const float depth = fabsf(xNorm);
-  const float scale = 1.0f - depth * 0.22f;
-  const int16_t w = static_cast<int16_t>(150 * scale);
-  const int16_t h = static_cast<int16_t>(150 * scale);
-  const int16_t cx = static_cast<int16_t>(c.width() / 2 + xNorm * 95);
-  const int16_t cy = static_cast<int16_t>(118 + depth * 10);
+  const float scale = 1.0f - depth * 0.18f;
+  const int16_t card = static_cast<int16_t>(c.height() > 160 ? 150 : 78);
+  const int16_t w = static_cast<int16_t>(card * scale);
+  const int16_t h = static_cast<int16_t>(card * scale);
+  const int16_t cx = static_cast<int16_t>(c.width() / 2 + xNorm * (card * 0.7f));
+  const int16_t cy = static_cast<int16_t>(c.height() / 2 + 6 + depth * 4);
   const int16_t x = static_cast<int16_t>(cx - w / 2);
   const int16_t y = static_cast<int16_t>(cy - h / 2);
   if (w <= 0 || h <= 0 || x >= c.width() || x + w <= 0) {
@@ -227,8 +248,11 @@ void ModePage::drawCarousel(Somnium::Ui::Canvas &c) {
   for (int slot : slots) {
     drawPanel(c, index_ + slot, static_cast<float>(slot), slide_);
   }
-  Text::drawIn(c, "dial: modes | click: storage | shutter: shoot",
-               Rect(0, 220, c.width(), 14), mutedCenter());
+  const char *hint = Somnium::Ble::pairPending()
+                         ? "hold shutter or click to pair"
+                         : "turn: mode | hold shutter: storage";
+  Text::drawIn(c, hint, Rect(0, static_cast<int16_t>(c.height() - 12), c.width(), 12),
+               mutedCenter());
 }
 
 void ModePage::draw(Somnium::Ui::Canvas &c) {
@@ -268,30 +292,23 @@ void ProcessPage::update(uint32_t dtMs) {
 
 void ProcessPage::draw(Somnium::Ui::Canvas &c) {
   c.clear(T().bg);
-  Text::drawIn(c, "cam > usb > dream", Rect(0, 40, c.width(), 14),
-               mutedCenter());
+  Text::drawIn(c, "cam > phone > dream", Rect(0, 2, c.width(), 10), mutedCenter());
 
-  // Same L→R order as Boot: fire · salt · whisk (no progress bar).
-  const int16_t y = 88;
-  c.fillRect(Rect(36, y, 40, 40), T().surfaceAlt);
-  c.fillRect(Rect(140, y, 40, 40), T().surfaceAlt);
-  c.fillRect(Rect(244, y, 40, 40), T().surfaceAlt);
-  c.hLine(76, static_cast<int16_t>(y + 20), 64, T().text);
-  c.hLine(180, static_cast<int16_t>(y + 20), 64, T().text);
-  KitchenAnim::drawFire(c, 56, static_cast<int16_t>(y + 20), elapsed_, T().text);
-  KitchenAnim::drawSalt(c, 160, static_cast<int16_t>(y + 20), elapsed_,
-                        T().pinkDim);
-  KitchenAnim::drawWhisk(c, 264, static_cast<int16_t>(y + 20), elapsed_,
-                         T().text);
+  const int16_t mid = static_cast<int16_t>(c.width() / 2);
+  const int16_t y = 36;
+  KitchenAnim::drawFire(c, static_cast<int16_t>(mid - 70), y, elapsed_, T().text);
+  KitchenAnim::drawSalt(c, mid, y, elapsed_, T().pinkDim);
+  KitchenAnim::drawWhisk(c, static_cast<int16_t>(mid + 70), y, elapsed_, T().text);
 
   Text::drawIn(c, failed_ ? "Kitchen trouble" : "Magic is Happening...",
-               Rect(0, 160, c.width(), 20), TextStyle(T().text, 2, Align::Center));
-  Text::drawIn(c, status_, Rect(0, 188, c.width(), 14), mutedCenter());
+               Rect(0, 70, c.width(), 12), TextStyle(T().text, 1, Align::Center));
+  Text::drawIn(c, status_, Rect(0, 86, c.width(), 12), mutedCenter());
   if (label_ != nullptr && label_[0] != '\0') {
-    Text::drawIn(c, label_, Rect(0, 208, c.width(), 14), mutedCenter());
+    Text::drawIn(c, label_, Rect(0, 100, c.width(), 12), mutedCenter());
   }
   if (failed_) {
-    Text::drawIn(c, "dial-click back", Rect(0, 224, c.width(), 12),
+    Text::drawIn(c, "hold shutter or click", Rect(0, static_cast<int16_t>(c.height() - 14),
+                                                 c.width(), 12),
                  mutedCenter());
   }
 }
@@ -339,7 +356,7 @@ void PreviewPage::beginReview(const char *modeLabel, const uint8_t *jpeg,
   total_ = 0;
   back_ = false;
   autoDone_ = false;
-  reviewStartedMs_ = 0;
+  reviewElapsed_ = 0;
   setPhoto(jpeg, length);
 }
 
@@ -372,7 +389,7 @@ void PreviewPage::onEnter() {
   back_ = false;
   autoDone_ = false;
   previewPresented_ = false;
-  reviewStartedMs_ = 0;
+  reviewElapsed_ = 0;
   clockMs_ = 0;
   markDirty();
 }
@@ -381,9 +398,11 @@ void PreviewPage::onExit() { releaseRgb(); }
 
 void PreviewPage::update(uint32_t dtMs) {
   clockMs_ += dtMs;
-  if (kind_ == Kind::Review && previewPresented_ &&
-      millis() - reviewStartedMs_ >= kReviewMs) {
-    autoDone_ = true;
+  if (kind_ == Kind::Review && previewPresented_) {
+    reviewElapsed_ += dtMs;
+    if (reviewElapsed_ >= kReviewMs) {
+      autoDone_ = true;
+    }
   }
   if (clockMs_ >= 1000) {
     clockMs_ = 0;
@@ -436,19 +455,19 @@ bool PreviewPage::handleAction(Somnium::Ui::NavAction action) {
 }
 
 void PreviewPage::drawChrome(Somnium::Ui::Canvas &c) {
-  c.fillRect(Rect(0, 0, c.width(), 22), T().surface);
-  Text::drawIn(c, "dial-click back", Rect(6, 7, c.width() - 12, 8),
+  c.fillRect(Rect(0, 0, c.width(), 12), T().surface);
+  Text::drawIn(c, "hold shutter or click: back", Rect(4, 2, c.width() - 8, 8),
                TextStyle(T().text, 1));
 
-  c.fillRect(Rect(0, static_cast<int16_t>(c.height() - 28), c.width(), 28),
+  c.fillRect(Rect(0, static_cast<int16_t>(c.height() - 16), c.width(), 16),
              T().surface);
 
   char when[32];
   Chrono::formatDateTime(when, sizeof(when));
   const int16_t clockWidth = Text::measure(when, 1).w;
   const int16_t clockX = static_cast<int16_t>(c.width() - clockWidth - 8);
-  const Rect metadataBox(8, static_cast<int16_t>(c.height() - 18),
-                         static_cast<int16_t>(clockX - 16), 8);
+  const Rect metadataBox(4, static_cast<int16_t>(c.height() - 12),
+                         static_cast<int16_t>(clockX - 8), 8);
   if (kind_ == Kind::Storage) {
     char meta[40];
     if (total_ <= 0) {
@@ -463,9 +482,8 @@ void PreviewPage::drawChrome(Somnium::Ui::Canvas &c) {
   }
 
   Text::drawIn(c, when,
-               Rect(clockX, static_cast<int16_t>(c.height() - 18), clockWidth, 8),
+               Rect(clockX, static_cast<int16_t>(c.height() - 12), clockWidth, 8),
                TextStyle(T().text, 1));
-  c.hLine(clockX, static_cast<int16_t>(c.height() - 8), clockWidth, T().pinkDim);
 }
 
 void PreviewPage::draw(Somnium::Ui::Canvas &c) {
@@ -483,7 +501,7 @@ void PreviewPage::draw(Somnium::Ui::Canvas &c) {
   }
   if (!decodePending_ && !previewPresented_) {
     previewPresented_ = true;
-    reviewStartedMs_ = millis();
+    reviewElapsed_ = 0;
   }
   drawChrome(c);
 }

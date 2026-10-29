@@ -13,6 +13,8 @@ class Ui {
   static void update();
   static void draw();
   static void tick();
+  static void invalidate();
+  static void rebaseClock();
 
   static Canvas &canvas();
   static Navigator &navigator();

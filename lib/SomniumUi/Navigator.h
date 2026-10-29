@@ -33,6 +33,9 @@ class Navigator {
 
   void update(uint32_t nowMs);
   void draw();
+  void invalidate();
+  // Drop the sleep gap so one frame does not fast-forward tweens.
+  void rebaseClock();
   bool handleAction(NavAction action);
 
  private:

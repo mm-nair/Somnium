@@ -628,6 +628,10 @@ bool httpCook(const uint8_t *jpeg, size_t jpegLen, const char *styleId, const ch
   return true;
 }
 
+// Direct HTTPS from the camera is off on this board. The phone relays
+// the JPEG to the local API. The cook implementation stays in this file
+// so the request shape is still next to the server, but it is not registered.
+#if SOMNIUM_ENABLE_DIRECT_HTTPS
 struct BindHttp {
   BindHttp() {
     HttpOps ops;
@@ -639,6 +643,7 @@ struct BindHttp {
 };
 
 BindHttp gBindHttp __attribute__((used));
+#endif
 
 }  // namespace
 

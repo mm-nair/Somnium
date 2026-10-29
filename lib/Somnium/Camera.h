@@ -20,6 +20,10 @@ class Camera {
   using FrameCallback = void (*)(const camera_fb_t *frame);
 
   static bool begin(int width = 320);
+  // Load the OV5640 autofocus firmware. Boot does this once. After light
+  // sleep the sensor is re-inited without it so the screen comes back
+  // first; the next shutter loads it again.
+  static void primeFocus();
   // Power down the sensor (call after a snap; next capture re-inits).
   static void end();
   static bool ready();

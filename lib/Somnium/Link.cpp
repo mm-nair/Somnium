@@ -160,20 +160,12 @@ void portFlush(void *ctx) { static_cast<WiFiClient *>(ctx)->flush(); }
 bool clientConnected() { return static_cast<bool>(gClient) && gClient.connected(); }
 
 void beginWifi() {
-  if (!secretsOk()) {
-    Console::println("WIFI off");
-    return;
-  }
-  gEnabled = true;
-  WiFi.persistent(false);
-  WiFi.mode(WIFI_STA);
-  WiFi.setSleep(false);
-  WiFi.setAutoReconnect(true);
-  WiFi.setHostname(Defaults::kLinkHostname);
-  WiFi.begin(SOMNIUM_WIFI_SSID, SOMNIUM_WIFI_PASSWORD);
-  gLastBegin = millis();
-  linkRegister(clientConnected);
-  Console::printf("WIFI join %s\n", SOMNIUM_WIFI_SSID);
+  // XIAO Sense build: the camera does not join a home network. Bulk
+  // transfer is a short-lived SoftAP owned by Transfer.cpp. Leaving
+  // gEnabled false keeps pollWifi from calling WiFi.begin.
+  (void)secretsOk;
+  (void)clientConnected;
+  Console::println("WIFI sta off (phone softap only)");
 }
 
 void pollWifi() {

@@ -1,12 +1,15 @@
 #include "Storage.h"
 
 #include <FS.h>
-#include <SD_MMC.h>
+#include <SD.h>
+#include <SPI.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "Config.h"
 #include "Console.h"
 #include "Image.h"
+#include "Power.h"
 
 namespace Somnium {
 namespace {
@@ -56,7 +59,7 @@ void rescan() {
   if (!gReady) {
     return;
   }
-  File dir = SD_MMC.open("/somnium");
+  File dir = SD.open("/somnium");
   if (!dir || !dir.isDirectory()) {
     return;
   }
@@ -103,21 +106,18 @@ void rescan() {
 }  // namespace
 
 bool Storage::begin() {
-  // Freenove FNK0085 SDMMC 1-bit: CLK=39 CMD=38 D0=40
-  if (!SD_MMC.setPins(39, 38, 40)) {
-    Console::println("SD pin setup failed");
-    return false;
-  }
-  if (!SD_MMC.begin("/sd", true)) {
+  // Sense microSD shares SPI with the ST7789. Display::begin owns SPI.begin.
+  pinMode(Pins::kSdCs, OUTPUT);
+  digitalWrite(Pins::kSdCs, HIGH);
+  if (!SD.begin(Pins::kSdCs, SPI, 10000000, "/sd", 5, false)) {
     Console::println("SD mount failed (ok if no card)");
     gReady = false;
     clearList();
     return false;
   }
   gReady = true;
-  SD_MMC.mkdir("/somnium");
-  // Keep plates across reboot/flash — pull demos with ./scripts/usb_pull_sd.sh.
-  // Wipe on demand: serial `sdwipe`.
+  SD.mkdir("/somnium");
+  SD.mkdir("/somnium/queue");
   clearList();
   Console::printf("SD ready (%d jpg)\n", photoCount());
   return true;
@@ -137,7 +137,7 @@ int Storage::nextShotNumber(const char *styleId, int minimumShot) {
              styleId, shot);
     snprintf(dreamPath, sizeof(dreamPath), "/somnium/%s_%d_1_dream.jpg",
              styleId, shot);
-    if (!SD_MMC.exists(originalPath) && !SD_MMC.exists(dreamPath)) {
+    if (!SD.exists(originalPath) && !SD.exists(dreamPath)) {
       return shot;
     }
     ++shot;
@@ -148,10 +148,10 @@ void Storage::clearGallery() {
   if (!gReady) {
     return;
   }
-  // Collect paths first — removing while iterating SD_MMC dirs is flaky.
+  // Collect paths first — removing while iterating SD dirs is flaky.
   char doomed[kMaxPhotos][64];
   int nDoomed = 0;
-  File dir = SD_MMC.open("/somnium");
+  File dir = SD.open("/somnium");
   if (dir && dir.isDirectory()) {
     File entry = dir.openNextFile();
     while (entry && nDoomed < kMaxPhotos) {
@@ -179,7 +179,7 @@ void Storage::clearGallery() {
   }
   int removed = 0;
   for (int i = 0; i < nDoomed; ++i) {
-    if (SD_MMC.remove(doomed[i])) {
+    if (SD.remove(doomed[i])) {
       removed += 1;
     }
   }
@@ -188,13 +188,14 @@ void Storage::clearGallery() {
 }
 
 bool Storage::saveJpeg(const char *path, const uint8_t *data, size_t length) {
+  PowerBusy busy;
   if (!gReady || path == nullptr || data == nullptr || length == 0) {
     return false;
   }
   // Critical: truncate/replace. FILE_WRITE alone can leave a longer old file's
   // tail attached → corrupted JPEG on read (rainbow noise on decode).
-  SD_MMC.remove(path);
-  File file = SD_MMC.open(path, FILE_WRITE);
+  SD.remove(path);
+  File file = SD.open(path, FILE_WRITE);
   if (!file) {
     return false;
   }
@@ -205,7 +206,7 @@ bool Storage::saveJpeg(const char *path, const uint8_t *data, size_t length) {
   if (written != length) {
     Console::printf("SD short write %u/%u %s\n", static_cast<unsigned>(written),
                     static_cast<unsigned>(length), path);
-    SD_MMC.remove(path);
+    SD.remove(path);
     return false;
   }
   return true;
@@ -239,7 +240,7 @@ bool Storage::loadJpeg(const char *path, uint8_t **outData, size_t *outLen) {
   }
   *outData = nullptr;
   *outLen = 0;
-  File file = SD_MMC.open(path, FILE_READ);
+  File file = SD.open(path, FILE_READ);
   if (!file) {
     return false;
   }

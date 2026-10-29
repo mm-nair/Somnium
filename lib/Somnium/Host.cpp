@@ -232,23 +232,7 @@ void handleLine(char *line) {
   }
 
   if (strcmp(line, "cooktest") == 0) {
-    JpegBuffer photo;
-    if (!Image::takePhoto(photo)) {
-      Console::println("ERR capture");
-      return;
-    }
-    JpegBuffer dream{};
-    String err;
-    const bool ok =
-        Host::cook(photo.data, photo.length, "anime", nullptr,
-                   Defaults::kVenueLat, Defaults::kVenueLon, dream, &err);
-    Image::freePhoto(photo);
-    if (!ok) {
-      Console::printf("ERR cooktest %s\n", err.c_str());
-      return;
-    }
-    Console::printf("OK cooktest %u\n", static_cast<unsigned>(dream.length));
-    free(dream.data);
+    Console::println("ERR cooktest moved to the phone relay");
     return;
   }
 

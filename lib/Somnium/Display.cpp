@@ -1,18 +1,27 @@
 #include "Display.h"
 
 #include <Adafruit_GFX.h>
-#include <Adafruit_ILI9341.h>
+#include <Adafruit_ST7789.h>
+#include <Adafruit_ST77xx.h>
 #include <SPI.h>
 
-#include "Camera.h"
 #include "Config.h"
 #include "Console.h"
 
 namespace Somnium {
 namespace {
 
-Adafruit_ILI9341 *gTft = nullptr;
+Adafruit_ST7789 *gTft = nullptr;
 bool gReady = false;
+bool gActive = false;
+
+void writeBacklight(bool on) {
+  if (Pins::kDisplayBl < 0) {
+    return;
+  }
+  const bool level = on == Defaults::kDisplayBlActiveHigh;
+  digitalWrite(Pins::kDisplayBl, level ? HIGH : LOW);
+}
 
 }  // namespace
 
@@ -20,31 +29,38 @@ bool Display::begin() {
   if (gReady) {
     return true;
   }
-  SPI.begin(Pins::kDisplaySck, -1, Pins::kDisplayMosi, Pins::kDisplayCs);
-  gTft = new Adafruit_ILI9341(&SPI, Pins::kDisplayDc, Pins::kDisplayCs,
-                              Pins::kDisplayRst);
-  gTft->begin(Defaults::kDisplaySpiHz);
-  gTft->setRotation(1);
-  // Boot color bars — if you still see solid white, SPI/wiring is wrong.
-  gTft->fillScreen(0xF800);  // red
-  delay(200);
-  gTft->fillScreen(0x07E0);  // green
-  delay(200);
-  gTft->fillScreen(0x001F);  // blue
-  delay(200);
-  gTft->fillScreen(0x0000);  // black
+  SPI.begin(Pins::kSpiSck, Pins::kSpiMiso, Pins::kSpiMosi, -1);
+  pinMode(Pins::kSdCs, OUTPUT);
+  digitalWrite(Pins::kSdCs, HIGH);
+  pinMode(Pins::kDisplayCs, OUTPUT);
+  digitalWrite(Pins::kDisplayCs, HIGH);
+  pinMode(Pins::kDisplayBl, OUTPUT);
+  writeBacklight(true);
+
+  gTft = new Adafruit_ST7789(Pins::kDisplayCs, Pins::kDisplayDc, Pins::kDisplayRst);
+  gTft->init(135, 240);
+  gTft->setSPISpeed(Defaults::kDisplaySpiHz);
+  gTft->setRotation(Defaults::kDisplayRotation);
+  gTft->invertDisplay(Defaults::kDisplayInvert);
+  gTft->fillScreen(0xF800);
+  delay(80);
+  gTft->fillScreen(0x07E0);
+  delay(80);
+  gTft->fillScreen(0x001F);
+  delay(80);
+  gTft->fillScreen(0x0000);
   gReady = true;
-  // Do NOT blit camera frames to the TFT — that flashes the raw capture over
-  // the Process UI. Capture stays in RAM until the cook finishes.
-  Camera::setFrameCallback(nullptr);
-  Console::printf("LCD ready SCK=%d MOSI=%d CS=%d DC=%d RST=%d\n",
-                  Pins::kDisplaySck, Pins::kDisplayMosi, Pins::kDisplayCs,
-                  Pins::kDisplayDc, Pins::kDisplayRst);
+  gActive = true;
+  Console::printf("LCD ST7789 %dx%d rot=%u CS=%d DC=%d RST=%d BL=%d\n",
+                  Defaults::kDisplayWidth, Defaults::kDisplayHeight,
+                  static_cast<unsigned>(Defaults::kDisplayRotation),
+                  Pins::kDisplayCs, Pins::kDisplayDc, Pins::kDisplayRst,
+                  Pins::kDisplayBl);
   return true;
 }
 
 void Display::clear(uint16_t color) {
-  if (gReady && gTft != nullptr) {
+  if (gReady && gActive && gTft != nullptr) {
     gTft->fillScreen(color);
   }
 }
@@ -55,44 +71,29 @@ int Display::height() { return Defaults::kDisplayHeight; }
 
 bool Display::ready() { return gReady && gTft != nullptr; }
 
-Adafruit_ILI9341 *Display::tft() { return gTft; }
+Adafruit_SPITFT *Display::tft() { return gTft; }
 
-void Display::drawRgb565(const uint16_t *pixels, int width, int height) {
-  if (!gReady || gTft == nullptr || pixels == nullptr ||
-      width != Defaults::kDisplayWidth || height != Defaults::kDisplayHeight) {
+void Display::setActive(bool on) {
+  if (!gReady || gTft == nullptr || on == gActive) {
+    writeBacklight(on);
     return;
   }
-  gTft->startWrite();
-  gTft->setAddrWindow(0, 0, width, height);
-  gTft->writePixels(const_cast<uint16_t *>(pixels),
-                    static_cast<uint32_t>(width) * height);
-  gTft->endWrite();
-}
-
-void Display::drawCameraFrame(const camera_fb_t *frame) {
-  if (!gReady || gTft == nullptr || frame == nullptr ||
-      frame->format != PIXFORMAT_RGB565 ||
-      (frame->width != 320 && frame->width != 640) ||
-      frame->height != frame->width * 3 / 4 ||
-      frame->len != frame->width * frame->height * 2) {
+  if (!on) {
+    writeBacklight(false);
+    gTft->sendCommand(ST77XX_DISPOFF);
+    gTft->sendCommand(ST77XX_SLPIN);
+    gActive = false;
+    Console::println("LCD sleep");
     return;
   }
-
-  uint16_t row[Defaults::kDisplayWidth];
-  const size_t scale = frame->width / Defaults::kDisplayWidth;
-  gTft->startWrite();
-  gTft->setAddrWindow(0, 0, Defaults::kDisplayWidth, Defaults::kDisplayHeight);
-  for (size_t y = 0; y < static_cast<size_t>(Defaults::kDisplayHeight); ++y) {
-    const uint8_t *src = frame->buf + y * scale * frame->width * 2;
-    for (size_t x = 0; x < static_cast<size_t>(Defaults::kDisplayWidth); ++x) {
-      const size_t offset = x * scale * 2;
-      row[x] = (static_cast<uint16_t>(src[offset]) << 8) | src[offset + 1];
-    }
-    gTft->writePixels(row, Defaults::kDisplayWidth);
-  }
-  gTft->endWrite();
+  gTft->sendCommand(ST77XX_SLPOUT);
+  delay(120);
+  gTft->sendCommand(ST77XX_DISPON);
+  writeBacklight(true);
+  gActive = true;
+  Console::println("LCD wake");
 }
 
-void Display::onCameraFrame(const camera_fb_t *frame) { drawCameraFrame(frame); }
+bool Display::active() { return gActive; }
 
 }  // namespace Somnium

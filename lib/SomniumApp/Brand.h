@@ -64,7 +64,7 @@ struct Brand {
     Somnium::Ui::TextStyle leftStyle(theme.text, 1, Somnium::Ui::Align::Left);
     Somnium::Ui::Text::draw(c, left, 6, 7, leftStyle);
     Somnium::Ui::TextStyle muted(theme.textMuted, 1);
-    Somnium::Ui::Text::draw(c, linked ? "USB*" : "USB.",
+    Somnium::Ui::Text::draw(c, linked ? "BLE*" : "BLE.",
                             static_cast<int16_t>(c.width() / 2 - 16), 7, muted);
     const int16_t tw = Somnium::Ui::Text::measure(dateTime, 1).w;
     Somnium::Ui::TextStyle right(theme.text, 1);

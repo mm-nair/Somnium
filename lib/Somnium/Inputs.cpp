@@ -11,6 +11,26 @@ int Inputs::sEncoderTransitions = 0;
 long Inputs::sEncoderPosition = 0;
 int8_t Inputs::sLastEncoderDelta = 0;
 int8_t Inputs::sPendingEncoderDelta = 0;
+unsigned long Inputs::sLastActivityMs = 0;
+bool Inputs::sShutterHeld = false;
+unsigned long Inputs::sShutterHeldAt = 0;
+bool Inputs::sShutterLongSent = false;
+
+void Inputs::noteActivity() { sLastActivityMs = millis(); }
+
+unsigned long Inputs::lastActivityMs() { return sLastActivityMs; }
+
+void Inputs::injectSelectClick() {
+  sEncoderSw.pressEvent = true;
+  sEncoderSw.releaseEvent = true;
+  noteActivity();
+}
+
+void Inputs::settleEncoder() {
+  sPrevEncoderState =
+      (digitalRead(Pins::kEncoderClk) << 1) | digitalRead(Pins::kEncoderDt);
+  sEncoderTransitions = 0;
+}
 
 void Inputs::initButton(Button &button, uint8_t pin) {
   button.pin = pin;
@@ -35,8 +55,10 @@ void Inputs::updateButton(Button &button) {
     button.stableReading = reading;
     if (previous == HIGH && reading == LOW) {
       button.pressEvent = true;
+      noteActivity();
     } else if (previous == LOW && reading == HIGH) {
       button.releaseEvent = true;
+      noteActivity();
     }
   }
 }
@@ -66,6 +88,7 @@ void Inputs::updateEncoder() {
     sPendingEncoderDelta =
         static_cast<int8_t>(sPendingEncoderDelta + dir);
     sEncoderTransitions = 0;
+    noteActivity();
   }
 }
 
@@ -79,13 +102,38 @@ void Inputs::begin() {
   sLastEncoderDelta = 0;
   sPendingEncoderDelta = 0;
   initButton(sShutter, Pins::kShutterButton);
-  initButton(sEncoderSw, Pins::kEncoderSw);
+  initButton(sEncoderSw, Pins::kSelectButton);
+  sShutterHeld = false;
+  sShutterLongSent = false;
+  noteActivity();
 }
 
 void Inputs::update() {
   updateEncoder();
   updateButton(sShutter);
   updateButton(sEncoderSw);
+  // A long shutter hold is the logical select when the encoder has no
+  // switch and no standalone button is fitted on the same GPIO.
+  const unsigned long now = millis();
+  if (sShutter.stableReading == LOW) {
+    if (!sShutterHeld) {
+      sShutterHeld = true;
+      sShutterHeldAt = now;
+      sShutterLongSent = false;
+    } else if (!sShutterLongSent && now - sShutterHeldAt >= Defaults::kSelectHoldMs) {
+      sShutterLongSent = true;
+      sEncoderSw.pressEvent = true;
+      noteActivity();
+    }
+  } else if (sShutterHeld) {
+    sShutterHeld = false;
+    if (sShutterLongSent) {
+      sEncoderSw.releaseEvent = true;
+      sShutter.releaseEvent = false;
+      sShutter.pressEvent = false;
+      noteActivity();
+    }
+  }
 }
 
 bool Inputs::shutterDown() { return sShutter.stableReading == LOW; }

@@ -23,6 +23,12 @@ class Inputs {
   static long encoderPosition();
   static int8_t lastEncoderDelta();
   static InputEvent pollEvent();
+  // Logical select, from the select GPIO or a long shutter hold.
+  static void injectSelectClick();
+  static void noteActivity();
+  static unsigned long lastActivityMs();
+  // Drop a partial gray-code that happened while the CPU was asleep.
+  static void settleEncoder();
 
  private:
   struct Button {
@@ -45,6 +51,10 @@ class Inputs {
   static long sEncoderPosition;
   static int8_t sLastEncoderDelta;
   static int8_t sPendingEncoderDelta;
+  static unsigned long sLastActivityMs;
+  static bool sShutterHeld;
+  static unsigned long sShutterHeldAt;
+  static bool sShutterLongSent;
 };
 
 }  // namespace Somnium

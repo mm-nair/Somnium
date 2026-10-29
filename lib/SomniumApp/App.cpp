@@ -1,12 +1,15 @@
 #include "App.h"
 
+#include <Ble.h>
 #include <Camera.h>
 #include <Config.h>
 #include <Console.h>
 #include <Host.h>
 #include <Image.h>
 #include <Inputs.h>
+#include <Power.h>
 #include <Storage.h>
+#include <Transfer.h>
 #include <Ui.h>
 #include <string.h>
 
@@ -257,9 +260,9 @@ void showProcess() {
   Somnium::Ui::Ui::replace(&gProcess, Somnium::Ui::Transition::None);
 }
 
-void showReview() {
-  snprintf(gReviewTitle, sizeof(gReviewTitle), "%s - dream",
-           gMode.selected().label);
+void showReview(const char *suffix) {
+  snprintf(gReviewTitle, sizeof(gReviewTitle), "%s - %s",
+           gMode.selected().label, suffix != nullptr ? suffix : "dream");
   gPreview.beginReview(gReviewTitle, gResultJpeg, gResultLen);
   gScreen = Screen::Review;
   Somnium::Ui::Ui::replace(&gPreview, Somnium::Ui::Transition::None);
@@ -304,11 +307,25 @@ void requestCapture() {
   showProcess();
 }
 
+void showSaved(Somnium::JpegBuffer &photo) {
+  freeResult();
+  gResultJpeg = photo.data;
+  gResultLen = photo.length;
+  photo.data = nullptr;
+  Somnium::Host::setPump(nullptr);
+  showReview("saved");
+  Somnium::Console::println("UI review saved");
+}
+
 void runPipeline() {
+  // Covers the snap, the SD write, and the phone wait so light sleep
+  // cannot start in the middle.
+  Somnium::PowerBusy hold;
+  (void)hold;
   Somnium::Host::setPump(pumpCookUi);
 
   if (!gCameraOk) {
-    failProcess("no camera - dial back");
+    failProcess("no camera - hold shutter");
     return;
   }
 
@@ -316,50 +333,48 @@ void runPipeline() {
   pumpCookUi();
   Somnium::JpegBuffer photo;
   if (!Somnium::Image::takePhoto(photo)) {
-    failProcess("capture fail - dial back");
+    failProcess("capture fail - hold shutter");
     return;
   }
-  // Sensor draws hard — power it down for the long USB/xAI wait so the
-  // CH340 doesn't fall off the USB bus (kernel error -71 / ACM gone).
+  // Sensor current drops while the phone relay runs. The next shutter
+  // brings it back inside captureJpeg.
   Somnium::Camera::end();
 
-  const char *cookStatus = "usb > thinkpad...";
-  if (appDirectCook()) {
-    cookStatus = "wifi > server...";
-  } else if (linkConnected()) {
-    cookStatus = "wifi > thinkpad...";
-  }
-  gProcess.setStatus(cookStatus);
+  const char *style = gMode.selected().id;
+  gShotCount = Somnium::Storage::nextShotNumber(style, gShotCount + 1);
+  savePair(style, gShotCount, photo.data, photo.length, nullptr, 0);
+
+  char origPath[72];
+  char dreamPath[72];
+  snprintf(origPath, sizeof(origPath), "/somnium/%s_%d_0_orig.jpg", style,
+           gShotCount);
+  snprintf(dreamPath, sizeof(dreamPath), "/somnium/%s_%d_1_dream.jpg", style,
+           gShotCount);
+
+  gProcess.setStatus(Somnium::Ble::paired() ? "phone > relay..."
+                                           : "saving on card...");
   pumpCookUi();
 
-  Somnium::JpegBuffer dream{};
-  String bridgeErr;
-  if (!Somnium::Host::cook(photo.data, photo.length, gMode.selected().id,
-                           nullptr, Somnium::Defaults::kVenueLat,
-                           Somnium::Defaults::kVenueLon, dream, &bridgeErr)) {
-    Somnium::Console::printf("ERR bridge %s\n", bridgeErr.c_str());
-    Somnium::Image::freePhoto(photo);
-    char buf[40];
-    snprintf(buf, sizeof(buf), "%s", bridgeErr.c_str());
-    failProcess(buf);
+  Somnium::RelayOutcome outcome;
+  const bool dreamed = Somnium::Transfer::relay(
+      photo.data, photo.length, photo.crc32, style, origPath, dreamPath, outcome,
+      pumpCookUi);
+  if (!dreamed) {
+    Somnium::Console::printf("RELAY %s\n", outcome.message);
+    showSaved(photo);
     return;
   }
 
-  Somnium::Console::printf("USB cook ok %u B\n",
-                           static_cast<unsigned>(dream.length));
-  gShotCount = Somnium::Storage::nextShotNumber(gMode.selected().id,
-                                              gShotCount + 1);
-  savePair(gMode.selected().id, gShotCount, photo.data, photo.length,
-           dream.data, dream.length);
+  Somnium::Console::printf("RELAY dream %u B\n",
+                           static_cast<unsigned>(outcome.dream.length));
+  savePair(style, gShotCount, nullptr, 0, outcome.dream.data, outcome.dream.length);
   Somnium::Image::freePhoto(photo);
-
   freeResult();
-  gResultJpeg = dream.data;
-  gResultLen = dream.length;
-  dream.data = nullptr;
+  gResultJpeg = outcome.dream.data;
+  gResultLen = outcome.dream.length;
+  outcome.dream.data = nullptr;
   Somnium::Host::setPump(nullptr);
-  // Next shutter re-inits the sensor via Camera::captureJpeg.
-  showReview();
+  showReview("dream");
   Somnium::Console::println("UI review");
 }
 
@@ -389,6 +404,13 @@ void mapInputs() {
         break;
 
       case Somnium::InputEvent::EncoderPressed:
+        // Select is the encoder switch or a separate button on the same
+        // GPIO, or a long shutter hold. Pairing steals that click.
+        if (Somnium::Ble::pairPending()) {
+          Somnium::Ble::acceptPair();
+          gIgnoreNextEncRelease = true;
+          break;
+        }
         // Dismiss stuck screens on press (don't wait for release).
         if (gScreen == Screen::Review) {
           freeResult();
@@ -438,6 +460,20 @@ void Runtime::begin(bool cameraOk) {
 
 void Runtime::tick() {
   Somnium::Host::poll();
+  Somnium::Ble::setStatusContext(gMode.selected().id, Somnium::Transfer::queueDepth());
+  Somnium::Ble::poll();
+  Somnium::Transfer::poll();
+  Somnium::Ble::Pending command;
+  while (Somnium::Ble::takeCommand(command)) {
+    Somnium::Inputs::noteActivity();
+    if (command.command == Somnium::Ble::Command::Shutter) {
+      requestCapture();
+    } else if (command.command == Somnium::Ble::Command::Select) {
+      Somnium::Inputs::injectSelectClick();
+    } else if (command.command == Somnium::Ble::Command::Mode) {
+      gMode.selectId(command.arg);
+    }
+  }
   Somnium::Inputs::update();
   mapInputs();
 
@@ -483,6 +519,11 @@ void Runtime::tick() {
   }
 
   Somnium::Ui::Ui::tick();
+  if (!Somnium::Ui::Ui::navigator().busy() && Somnium::Power::poll()) {
+    Somnium::Ui::Ui::rebaseClock();
+    Somnium::Ui::Ui::invalidate();
+    Somnium::Ui::Ui::tick();
+  }
 }
 
 }  // namespace App
