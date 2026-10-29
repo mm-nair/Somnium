@@ -123,6 +123,16 @@ bool Storage::begin() {
   return true;
 }
 
+void Storage::end() {
+  if (!gReady) {
+    return;
+  }
+  SD_MMC.end();
+  gReady = false;
+  clearList();
+  Console::println("SD off");
+}
+
 bool Storage::ready() { return gReady; }
 
 int Storage::nextShotNumber(const char *styleId, int minimumShot) {

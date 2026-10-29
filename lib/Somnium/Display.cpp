@@ -16,7 +16,7 @@ bool gReady = false;
 
 }  // namespace
 
-bool Display::begin() {
+bool Display::begin(bool bootColors) {
   if (gReady) {
     return true;
   }
@@ -26,12 +26,15 @@ bool Display::begin() {
   gTft->begin(Defaults::kDisplaySpiHz);
   gTft->setRotation(1);
   // Boot color bars — if you still see solid white, SPI/wiring is wrong.
-  gTft->fillScreen(0xF800);  // red
-  delay(200);
-  gTft->fillScreen(0x07E0);  // green
-  delay(200);
-  gTft->fillScreen(0x001F);  // blue
-  delay(200);
+  // Skipped after deep-sleep wake so the mode screen comes back directly.
+  if (bootColors) {
+    gTft->fillScreen(0xF800);  // red
+    delay(200);
+    gTft->fillScreen(0x07E0);  // green
+    delay(200);
+    gTft->fillScreen(0x001F);  // blue
+    delay(200);
+  }
   gTft->fillScreen(0x0000);  // black
   gReady = true;
   // Do NOT blit camera frames to the TFT — that flashes the raw capture over
@@ -40,6 +43,36 @@ bool Display::begin() {
   Console::printf("LCD ready SCK=%d MOSI=%d CS=%d DC=%d RST=%d\n",
                   Pins::kDisplaySck, Pins::kDisplayMosi, Pins::kDisplayCs,
                   Pins::kDisplayDc, Pins::kDisplayRst);
+  return true;
+}
+
+bool Display::shutdown() {
+  if (gTft == nullptr) {
+    return false;
+  }
+  if (gReady) {
+    gTft->fillScreen(0x0000);
+    // ILI9341_DISPOFF then ILI9341_SLPIN. No backlight pin is wired, so
+    // this blanks the panel; an LED tied to VCC can stay lit.
+    gTft->sendCommand(0x28, static_cast<const uint8_t *>(nullptr), 0);
+    delay(20);
+    gTft->sendCommand(0x10, static_cast<const uint8_t *>(nullptr), 0);
+    delay(120);
+  }
+  digitalWrite(Pins::kDisplayCs, HIGH);
+  SPI.end();
+  pinMode(Pins::kDisplayCs, OUTPUT);
+  digitalWrite(Pins::kDisplayCs, HIGH);
+  pinMode(Pins::kDisplayDc, OUTPUT);
+  digitalWrite(Pins::kDisplayDc, LOW);
+  pinMode(Pins::kDisplayRst, OUTPUT);
+  digitalWrite(Pins::kDisplayRst, HIGH);
+  pinMode(Pins::kDisplaySck, OUTPUT);
+  digitalWrite(Pins::kDisplaySck, LOW);
+  pinMode(Pins::kDisplayMosi, OUTPUT);
+  digitalWrite(Pins::kDisplayMosi, LOW);
+  gReady = false;
+  Console::println("LCD off");
   return true;
 }
 

@@ -34,6 +34,8 @@ void linkBind(const LinkOps &ops);
 void linkAnchor();
 
 void linkBegin();
+// Drop the TCP client, mDNS, and the STA radio. Safe if Wi-Fi never joined.
+void linkShutdown();
 void linkPoll();
 void linkSetBusy(bool busy);
 bool linkClaim(CookPort *port);

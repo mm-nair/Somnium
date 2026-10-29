@@ -8,7 +8,11 @@ namespace Somnium {
 
 class Display {
  public:
-  static bool begin();
+  static bool begin(bool bootColors = true);
+  // Blank the panel and put the ILI9341 to sleep. There is no backlight
+  // GPIO in the pin map; this is the software-off path. Returns false if
+  // begin() never created the panel.
+  static bool shutdown();
   static void clear(uint16_t color = 0x0000);
   static void drawCameraFrame(const camera_fb_t *frame);
   static void drawRgb565(const uint16_t *pixels, int width, int height);
