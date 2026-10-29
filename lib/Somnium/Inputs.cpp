@@ -1,6 +1,7 @@
 #include "Inputs.h"
 
 #include "Config.h"
+#include "Power.h"
 
 namespace Somnium {
 
@@ -11,6 +12,7 @@ int Inputs::sEncoderTransitions = 0;
 long Inputs::sEncoderPosition = 0;
 int8_t Inputs::sLastEncoderDelta = 0;
 int8_t Inputs::sPendingEncoderDelta = 0;
+bool sSuppressWakeRelease = false;
 
 void Inputs::initButton(Button &button, uint8_t pin) {
   button.pin = pin;
@@ -35,8 +37,10 @@ void Inputs::updateButton(Button &button) {
     button.stableReading = reading;
     if (previous == HIGH && reading == LOW) {
       button.pressEvent = true;
+      Power::noteActivity();
     } else if (previous == LOW && reading == HIGH) {
       button.releaseEvent = true;
+      Power::noteActivity();
     }
   }
 }
@@ -66,6 +70,7 @@ void Inputs::updateEncoder() {
     sPendingEncoderDelta =
         static_cast<int8_t>(sPendingEncoderDelta + dir);
     sEncoderTransitions = 0;
+    Power::noteActivity();
   }
 }
 
@@ -80,6 +85,9 @@ void Inputs::begin() {
   sPendingEncoderDelta = 0;
   initButton(sShutter, Pins::kShutterButton);
   initButton(sEncoderSw, Pins::kEncoderSw);
+  // The press that woke us is still down. Its release is not a photo.
+  sSuppressWakeRelease =
+      Power::wokeFromSleep() && sShutter.stableReading == LOW;
 }
 
 void Inputs::update() {
@@ -103,7 +111,11 @@ InputEvent Inputs::pollEvent() {
   }
   if (sShutter.releaseEvent) {
     sShutter.releaseEvent = false;
-    return InputEvent::ShutterReleased;
+    if (sSuppressWakeRelease) {
+      sSuppressWakeRelease = false;
+    } else {
+      return InputEvent::ShutterReleased;
+    }
   }
   if (sEncoderSw.pressEvent) {
     sEncoderSw.pressEvent = false;

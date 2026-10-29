@@ -7,6 +7,7 @@ namespace Somnium {
 class Storage {
  public:
   static bool begin();
+  static void end();
   static bool ready();
   static int nextShotNumber(const char *styleId, int minimumShot);
   // Writes JPEG bytes (truncates/replaces existing file).

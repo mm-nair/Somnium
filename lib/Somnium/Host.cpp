@@ -15,6 +15,7 @@
 #include "Console.h"
 #include "Image.h"
 #include "Link.h"
+#include "Power.h"
 #include "Storage.h"
 
 namespace Somnium {
@@ -221,6 +222,8 @@ void handleLine(char *line) {
   int quality = Defaults::kJpegQuality;
   if (strcmp(line, "capture") == 0 ||
       sscanf(line, "capture %d %d", &width, &quality) == 2) {
+    Power::Busy powerBusy;
+    (void)powerBusy;
     JpegBuffer photo;
     if (!Image::takePhoto(photo, width, quality)) {
       Console::println("ERR capture");
@@ -232,6 +235,8 @@ void handleLine(char *line) {
   }
 
   if (strcmp(line, "cooktest") == 0) {
+    Power::Busy powerBusy;
+    (void)powerBusy;
     JpegBuffer photo;
     if (!Image::takePhoto(photo)) {
       Console::println("ERR capture");
@@ -271,6 +276,8 @@ void handleLine(char *line) {
   }
 
   if (strcmp(line, "sdpull") == 0) {
+    Power::Busy powerBusy;
+    (void)powerBusy;
     if (!Storage::ready()) {
       Console::println("ERR sd");
       return;
@@ -305,6 +312,8 @@ void handleLine(char *line) {
   }
 
   if (strcmp(line, "sdwipe") == 0) {
+    Power::Busy powerBusy;
+    (void)powerBusy;
     if (!Storage::ready()) {
       Console::println("ERR sd");
       return;
@@ -526,10 +535,12 @@ bool Host::cook(const uint8_t *jpeg, size_t jpegLen, const char *styleId,
   }
 
   gCooking = true;
+  Power::Busy powerBusy;
   struct BusyGuard {
     BusyGuard() { linkSetBusy(true); }
     ~BusyGuard() { linkSetBusy(false); }
   } busyGuard;
+  (void)powerBusy;
   (void)busyGuard;
 
   if (httpCookConfigured()) {

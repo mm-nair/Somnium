@@ -6,6 +6,7 @@
 #include <Host.h>
 #include <Image.h>
 #include <Inputs.h>
+#include <Power.h>
 #include <Storage.h>
 #include <Ui.h>
 #include <string.h>
@@ -305,6 +306,9 @@ void requestCapture() {
 }
 
 void runPipeline() {
+  // Covers the snap, the cook (USB, Wi-Fi, or direct HTTPS), and the save.
+  Somnium::Power::Busy powerBusy;
+  (void)powerBusy;
   Somnium::Host::setPump(pumpCookUi);
 
   if (!gCameraOk) {
@@ -432,6 +436,17 @@ void Runtime::begin(bool cameraOk) {
   gCameraOk = cameraOk;
   Brand::applyTheme(Somnium::Ui::Ui::theme());
   Somnium::Ui::Ui::begin();
+  // Deep sleep wakes through setup(). Skip the boot splash so the camera
+  // is on the mode carousel, which is the ready state while it is in use.
+  // The press that woke the shutter is not a shot; Inputs drops that release.
+  if (Somnium::Power::wokeFromSleep()) {
+    gScreen = Screen::Mode;
+    gAwaitProcessWork = false;
+    gProcessHolding = false;
+    gProcess.clearFailed();
+    Somnium::Ui::Ui::push(&gMode, Somnium::Ui::Transition::None);
+    return;
+  }
   Somnium::Ui::Ui::push(&gBoot, Somnium::Ui::Transition::None);
   gScreen = Screen::Boot;
 }
@@ -483,6 +498,7 @@ void Runtime::tick() {
   }
 
   Somnium::Ui::Ui::tick();
+  Somnium::Power::poll();
 }
 
 }  // namespace App

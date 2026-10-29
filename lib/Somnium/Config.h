@@ -47,6 +47,10 @@ constexpr int kCameraWidth = 320;
 constexpr bool kCameraMirrorHorizontal = true;
 constexpr int kJpegQuality = 70;
 constexpr unsigned long kButtonDebounceMs = 25;
+// Software sleep while the battery switch is still on. Debounced button
+// edges and full encoder detents restart the timer. See Power.cpp for the
+// deep-sleep wake pin (the shutter).
+constexpr uint32_t kInactivitySleepMs = 45000;
 // Must exceed usb_bridge/xAI --timeout (240s) plus reconnect slack.
 constexpr uint32_t kCookTimeoutMs = 300000;
 

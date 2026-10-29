@@ -235,6 +235,19 @@ void dropClient() {
   }
 }
 
+void shutdownRadio() {
+  const bool started = gEnabled || gWasConnected || gServices;
+  gEnabled = false;
+  stopServices();
+  if (!started) {
+    Console::println("WIFI idle");
+    return;
+  }
+  WiFi.disconnect(true, false);
+  WiFi.mode(WIFI_OFF);
+  Console::println("WIFI off");
+}
+
 struct BindLink {
   BindLink() {
     // Function pointers only. Wi-Fi itself starts from setup(), not here.
@@ -254,5 +267,7 @@ BindLink gBindLink __attribute__((used));
 }  // namespace
 
 void linkAnchor() {}
+
+void linkShutdown() { shutdownRadio(); }
 
 }  // namespace Somnium
