@@ -37,6 +37,8 @@ bool Display::begin() {
   pinMode(Pins::kDisplayBl, OUTPUT);
   writeBacklight(true);
 
+  // rst -1: init() does not toggle a pin. Its command table starts with
+  // SWRESET (0x01) and waits 150 ms. RES is tied to XIAO RST/EN or an RC.
   gTft = new Adafruit_ST7789(Pins::kDisplayCs, Pins::kDisplayDc, Pins::kDisplayRst);
   gTft->init(135, 240);
   gTft->setSPISpeed(Defaults::kDisplaySpiHz);
@@ -51,11 +53,11 @@ bool Display::begin() {
   gTft->fillScreen(0x0000);
   gReady = true;
   gActive = true;
-  Console::printf("LCD ST7789 %dx%d rot=%u CS=%d DC=%d RST=%d BL=%d\n",
+  Console::printf("LCD ST7789 %dx%d rot=%u CS=%d DC=%d RST=%s BL=%d\n",
                   Defaults::kDisplayWidth, Defaults::kDisplayHeight,
                   static_cast<unsigned>(Defaults::kDisplayRotation),
-                  Pins::kDisplayCs, Pins::kDisplayDc, Pins::kDisplayRst,
-                  Pins::kDisplayBl);
+                  Pins::kDisplayCs, Pins::kDisplayDc,
+                  Pins::kDisplayRst < 0 ? "sw" : "gpio", Pins::kDisplayBl);
   return true;
 }
 

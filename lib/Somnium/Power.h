@@ -14,8 +14,14 @@ class Power {
   static bool busy();
   // True when the CPU actually halted. Caller redraws the UI afterwards.
   static bool poll();
-  // No ADC pin is free on this wiring. Always unknown.
+  // Skip the ADC while a capture, SD write, or SoftAP transfer is in progress.
+  static void sampleBattery();
+  // Smoothed pack voltage at the BAT+ pad, after the divider scale. False
+  // until the first quiet sample.
   static bool batteryMillivolts(int &millivolts);
+  // 0..100 from 3.3 V..4.2 V, or -1 before the first sample.
+  static int batteryPercent();
+  static bool batteryLow();
 };
 
 class PowerBusy {

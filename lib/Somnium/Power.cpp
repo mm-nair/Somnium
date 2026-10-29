@@ -1,6 +1,7 @@
 #include "Power.h"
 
 #include <driver/gpio.h>
+#include <esp32-hal-adc.h>
 #include <esp_sleep.h>
 
 #include "Ble.h"
@@ -16,6 +17,9 @@ namespace {
 
 int sBusy = 0;
 unsigned long sRetryAt = 0;
+unsigned long sLastBatteryMs = 0;
+int sBatteryMv = 0;
+bool sBatteryKnown = false;
 
 constexpr int kWakePins[] = {
     Pins::kShutterButton,
@@ -116,9 +120,12 @@ bool enterLightSleep() {
 void Power::begin() {
   sBusy = 0;
   sRetryAt = 0;
+  sBatteryKnown = false;
+  analogSetPinAttenuation(Pins::kBatteryAdc, ADC_11db);
   Inputs::noteActivity();
-  Console::printf("PWR sleep %lu ms; battery adc off (no free pin)\n",
-                  static_cast<unsigned long>(Defaults::kInactivitySleepMs));
+  Console::printf("PWR sleep %lu ms; battery ADC GPIO%d\n",
+                  static_cast<unsigned long>(Defaults::kInactivitySleepMs),
+                  Pins::kBatteryAdc);
 }
 
 void Power::setBusy(bool busy) {
@@ -137,9 +144,57 @@ void Power::setBusy(bool busy) {
 
 bool Power::busy() { return sBusy > 0; }
 
+void Power::sampleBattery() {
+  if (sBusy > 0 || Transfer::radioUp() || Ble::previewBusy()) {
+    return;
+  }
+  const unsigned long now = millis();
+  if (sBatteryKnown && now - sLastBatteryMs < Defaults::kBatterySampleMs) {
+    return;
+  }
+  sLastBatteryMs = now;
+  uint32_t sum = 0;
+  for (int i = 0; i < Defaults::kBatterySamples; ++i) {
+    sum += analogReadMilliVolts(Pins::kBatteryAdc);
+  }
+  const int pinMv = static_cast<int>(sum / Defaults::kBatterySamples);
+  const int packMv = pinMv * (Defaults::kBatteryTopOhms + Defaults::kBatteryBottomOhms) /
+                     Defaults::kBatteryBottomOhms;
+  if (!sBatteryKnown) {
+    sBatteryMv = packMv;
+    sBatteryKnown = true;
+  } else {
+    sBatteryMv = (sBatteryMv * 3 + packMv) / 4;
+  }
+}
+
 bool Power::batteryMillivolts(int &millivolts) {
-  millivolts = -1;
-  return false;
+  if (!sBatteryKnown) {
+    millivolts = -1;
+    return false;
+  }
+  millivolts = sBatteryMv;
+  return true;
+}
+
+int Power::batteryPercent() {
+  if (!sBatteryKnown) {
+    return -1;
+  }
+  const int span = Defaults::kBatteryFullMv - Defaults::kBatteryEmptyMv;
+  int pct = (sBatteryMv - Defaults::kBatteryEmptyMv) * 100 / span;
+  if (pct < 0) {
+    pct = 0;
+  }
+  if (pct > 100) {
+    pct = 100;
+  }
+  return pct;
+}
+
+bool Power::batteryLow() {
+  const int pct = batteryPercent();
+  return pct >= 0 && pct <= Defaults::kBatteryLowPercent;
 }
 
 bool Power::poll() {

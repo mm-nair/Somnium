@@ -22,7 +22,7 @@ what the firmware uses.
 | --- | --- | --- | --- | --- |
 | Display CS | D0 | 1 | out | Required. The panel must have a CS pin. |
 | Display DC | D1 | 2 | out | Data / command. |
-| Display RES | D2 | 3 | out | Active-low reset. Strap pin, idle high. |
+| Battery sense | D2 | 3 | analog in | ADC1. 100 kΩ / 100 kΩ from BAT+ to GND, midpoint here, 100 nF to GND. |
 | Encoder A | D3 | 4 | in, pull-up | Wake source. Idle high at a detent. |
 | Encoder B | D4 | 5 | in, pull-up | Wake source. Idle high at a detent. |
 | Select | D5 | 6 | in, pull-up | Encoder push **or** a separate button. Active low. Wake source. |
@@ -39,15 +39,44 @@ PCLK 13, PWDN and RESET not connected.
 
 Nothing in that camera set overlaps the table above.
 
-### Why there is no battery ADC
+### Battery divider
 
-Every ADC1-capable header pin is already assigned (GPIO1–GPIO9). GPIO43 and
-GPIO44 are not ADC inputs. GPIO3 is ADC-capable but it is the display reset
-and an ESP32-S3 strapping pin, so a divider on it would be mid-rail at
-reset. This revision does not measure pack voltage. BLE status reports
-`batt=?` and `chg=?`. The orange charge LED next to the USB socket is the
-charger IC's own indicator. A later spin can free an ADC only by deleting
-a control, which this build does not do.
+D2/GPIO3 is free because the panel reset is not a GPIO (see below). It is
+ADC1 channel 2, so Wi-Fi can stay up without stealing the converter. The
+sense net is the XIAO **BAT+** pad, which is the cell only when the slide
+switch is on.
+
+```
+BAT+ ---- 100k ----+---- 100k ---- GND
+                   |
+                  100nF
+                   |
+                  GND
+                   |
+                 D2 / GPIO3
+```
+
+The firmware averages eight `analogReadMilliVolts` samples, multiplies by
+2, and smooths with a 3/4 exponential average. Percent is a straight line
+from 3.3 V = 0% to 4.2 V = 100%. It does not sample during a capture, an
+SD write, or while the SoftAP is up. The screen shows an icon and the
+percent; at or below 10% the number is replaced by `LOW`.
+
+Two resistors of 100 kΩ from 4.2 V draw about **20 µA** (4.2 V / 200 kΩ)
+whenever the slide switch is on, including light sleep. That is the cost
+of leaving the divider connected. Sleep does not switch the divider off.
+
+GPIO3 is also an ESP32-S3 strapping pin (it selects the JTAG source). The
+divider holds it near half the pack voltage while the chip comes out of
+reset, which is not a solid high or low. Confirm on the bench that USB
+still enumerates with the divider fitted. If it does not, the boot is
+hitting that strap; do not "fix" it by driving GPIO3 as a reset output
+again.
+
+`chg` stays unknown. There is still no VBUS-sense GPIO. The orange LED by
+the USB socket is the charger IC. While USB is charging, BAT+ sits at the
+charger voltage, so the percent reads high until the cell is actually
+near full.
 
 ### Display
 
@@ -70,10 +99,15 @@ BLK is wired to D7 so light sleep can turn the backlight off. These modules
 are active-high: high = lit. `kDisplayBlActiveHigh` flips that if a panel
 is backwards.
 
-GPIO3 (RES) is a strapping pin. It must be high while the chip comes out
-of reset, otherwise the ROM may switch onto the JTAG strap. The display
-reset line is active-low. Fit a 10 kΩ from GPIO3 to 3V3 if the module does
-not already pull RES up. After boot the firmware drives RES itself.
+The display RES pin is not connected to a GPIO. `kDisplayRst` is `-1`, and
+init sends the ST7789 software reset (`SWRESET`, 0x01) instead of toggling
+a pin. Wire RES one of these ways:
+
+1. Straight to the XIAO **RST / EN** pad, so the panel resets whenever the
+   chip resets.
+2. A 10 kΩ pull-up from RES to 3V3, and 100 nF from RES to GND, if you
+   would rather not share the button reset. The RC holds the panel in
+   reset for a few milliseconds at power-up.
 
 D6 and D7 are UART0 TX/RX on the bare chip. This firmware boots USB CDC
 (`ARDUINO_USB_CDC_ON_BOOT`) so the log stays on the USB-C jack and those
@@ -132,7 +166,7 @@ pads. The slide switch is on the cell side of BAT+.
 Light sleep does not change any of that. It stops the CPU, the backlight,
 the camera, BLE, and the SoftAP. It does not reconfigure USB, the BAT
 pads, or the charger. The charge LED keeps doing whatever the charger IC
-is doing.
+is doing. The battery divider stays connected and draws about 20 µA.
 
 Idle time before sleep is `Defaults::kInactivitySleepMs` (45 s). A capture,
 an SD save, or a phone transfer holds a busy flag so sleep waits until
@@ -168,7 +202,10 @@ flowchart LR
   XIAO -->|GPIO21| Card
   XIAO -->|GPIO1 CS| TFT
   XIAO -->|GPIO2 DC| TFT
-  XIAO -->|GPIO3 RES| TFT
+  XIAO -->|RST/EN or RC| TFT
+  BatP -->|100k| Sense[GPIO3 sense]
+  Sense -->|100k| GND
+  XIAO --- Sense
   XIAO -->|GPIO44 BLK| TFT
   XIAO -->|GPIO4 A| Enc[Encoder]
   XIAO -->|GPIO5 B| Enc
@@ -186,7 +223,10 @@ GND -- select                             |
                                           |
 GPIO1  D0  CS  ---------------- TFT CS    |
 GPIO2  D1  DC  ---------------- TFT DC    |
-GPIO3  D2  RES ----- 10k to 3V3 optional  +- TFT RES
+TFT RES -------- XIAO RST/EN    (or 10k to 3V3 and 100nF to GND)
+BAT+ -- 100k --+-- 100k -- GND
+               +-- 100nF -- GND
+               +-- GPIO3 D2
 GPIO44 D7  BLK ---------------- TFT BLK   |
 GPIO7  D8  SCK ----- TFT SCL and SD SCK   |
 GPIO9  D10 MOSI ---- TFT SDA and SD MOSI  |
@@ -225,9 +265,10 @@ antenna fitted.
 | 1 | Quadrature encoder **without** switch | Bourns PEC11R-4015F-N0024 | Option B. Buy this instead of the row above, not as well. |
 | 1 | Tactile button for select | 6×6 mm tactile, or Omron B3F-1000 | Option B only. Same net as the encoder switch would have used (GPIO6 to GND). |
 | 1 | Shutter button | 6×6 mm tactile, or a larger 12 mm button | GPIO43 to GND. |
-| 1 | 10 kΩ resistor | Any 1% or 5% | GPIO3 to 3V3, only if the display does not pull RES up. |
-
-No divider resistors. There is nowhere to land them.
+| 2 | 100 kΩ resistor, 1% | Any 100 kΩ 1% | Battery divider, BAT+ to GPIO3 to GND. |
+| 1 | 100 nF capacitor | 100 nF ceramic, 16 V or higher | GPIO3 to GND, across the bottom divider resistor. |
+| 1 | 100 nF capacitor | 100 nF ceramic, 16 V or higher | Only if TFT RES uses the RC instead of XIAO RST/EN. |
+| 1 | 10 kΩ resistor | Any 1% or 5% | TFT RES pull-up to 3V3, only for that RC reset. |
 
 ## Assembly
 
@@ -236,8 +277,8 @@ No divider resistors. There is nowhere to land them.
    and SDA share the SD socket's SCK and MOSI. Do not also wire a second
    SPI bus.
 3. Solder encoder A/B, the shutter, and either the encoder switch or the
-   standalone select button. All switches are to ground. No external
-   pull-ups except the optional 10 kΩ on RES.
+   standalone select button. All switches are to ground. Wire the battery
+   divider to BAT+ and D2, and wire TFT RES to RST/EN or the RC.
 4. Solder the cell negative to BAT−. Solder the cell positive to one side
    of the slide, and the other side of the slide to BAT+. Double-check
    polarity before the switch is turned on.
@@ -252,8 +293,12 @@ No divider resistors. There is nowhere to land them.
 No board was attached while this firmware was written. Compile is not a
 substitute for the list below.
 
-- Boot with the display attached: GPIO3 stays high through reset (the
-  chip still enumerates USB and does not fall into the JTAG strap).
+- Boot with the divider and the display attached. GPIO3 is a strap pin
+  held near half the pack voltage; USB must still enumerate.
+- Battery reading versus a meter on BAT+. Icon and percent on the mode
+  header, `LOW` at or below 10%, and BLE Battery Level (`0x180F` /
+  `0x2A19`) matches that percent. No fresh samples during a capture or
+  while the SoftAP is up.
 - Color bars and UI orientation. If the image is mirrored or upside down,
   change `kDisplayRotation`. If colors are negative, flip `kDisplayInvert`.
 - Backlight: lit while awake, dark in light sleep, lit again after wake.

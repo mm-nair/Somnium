@@ -47,9 +47,30 @@ paired=0 conn=1 queue=2 batt=? chg=? mode=anime preview=1a2b3c4d,2400,deadbeef
 
 - `paired` is 1 after the person at the camera accepts this phone.
 - `queue` is shots on the card that do not yet have a dream JPEG.
-- `batt` and `chg` are always `?` on this hardware. There is no battery
-  ADC and no VBUS-sense GPIO. Do not invent a charge icon from this field.
-  The charger LED is on the XIAO, not in this protocol.
+- `batt` is the smoothed pack percent, 0 to 100, from 3.3 V = 0% to
+  4.2 V = 100%. `mv` is the smoothed BAT+ millivolts (pin reading times
+  2). Either field is `?` until the first quiet sample. The camera does
+  not sample during a capture, an SD write, or while the SoftAP is up,
+  so a notify in those windows repeats the last number.
+- `chg` stays `?`. There is no VBUS-sense GPIO. The charger LED is on
+  the XIAO. USB charging holds BAT+ at the charger voltage, so `batt`
+  reads high until the cell is actually near 4.2 V. Do not treat `batt`
+  as a charge-state flag.
+
+### Battery Service
+
+In addition to the status line, the camera advertises the standard
+Battery Service.
+
+| | UUID | Properties |
+| --- | --- | --- |
+| Battery Service | `0x180F` | primary service |
+| Battery Level | `0x2A19` | read, notify |
+
+The value is one uint8, the same percent as `batt=`. Notifies follow the
+status characteristic, about every 2 seconds while a phone is connected,
+and only after a real sample exists. `0` means empty, not "unknown";
+unknown is the absence of a value before the first sample.
 - `mode` is the style id (`popcomic`, `watercolor`, `anime`, `surprise`,
   `pencil`).
 - `preview` is `-` or `id,length,crc32` for the preview currently being

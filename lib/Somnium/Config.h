@@ -15,8 +15,12 @@ constexpr int kSpiMosi = 9;    // D10, panel SDA
 constexpr int kSdCs = 21;      // Sense microSD CS, not on the header
 constexpr int kDisplayCs = 1;  // D0
 constexpr int kDisplayDc = 2;  // D1
-constexpr int kDisplayRst = 3; // D2, RES. Strap pin: keep high at reset.
+// RES is not a GPIO. Tie it to the XIAO RST/EN pad, or use a 10k pull-up
+// to 3V3 and 100 nF to GND. -1 makes Adafruit send SWRESET instead.
+constexpr int kDisplayRst = -1;
 constexpr int kDisplayBl = 44; // D7, BLK, active high
+// D2, ADC1_CH2. Midpoint of a 100k/100k divider on the XIAO BAT+ pad.
+constexpr int kBatteryAdc = 3;
 
 // Encoder A/B always. Select is the encoder push switch OR a separate
 // tactile button on this same net (input pull-up, active low). Leave the
@@ -45,9 +49,6 @@ constexpr int kCamPclk = 13;
 constexpr int kCamPwdn = -1;
 constexpr int kCamReset = -1;
 
-// No header pin is left that is both free and ADC1-capable. GPIO44 is the
-// backlight and is not an ADC pin. Battery voltage is not measured.
-
 }  // namespace Pins
 
 namespace Defaults {
@@ -60,6 +61,16 @@ constexpr int kDisplayHeight = 135;
 constexpr uint8_t kDisplayRotation = 1;
 constexpr bool kDisplayInvert = true;
 constexpr bool kDisplayBlActiveHigh = true;
+
+// 100k / 100k from BAT+ to GND. Pack millivolts are the pin reading times
+// (top + bottom) / bottom. 4.2 V is full, 3.3 V is empty.
+constexpr int kBatteryTopOhms = 100000;
+constexpr int kBatteryBottomOhms = 100000;
+constexpr int kBatteryFullMv = 4200;
+constexpr int kBatteryEmptyMv = 3300;
+constexpr int kBatteryLowPercent = 10;
+constexpr int kBatterySamples = 8;
+constexpr uint32_t kBatterySampleMs = 500;
 
 // Sensor JPEG size. SVGA (800x600) is the default; the phone transfer is
 // chunked so a later bench can move this up. Mapped in Camera.cpp.

@@ -176,8 +176,8 @@ bool ModePage::handleAction(Somnium::Ui::NavAction action) {
 }
 
 void ModePage::drawHeaderOnly(Somnium::Ui::Canvas &c) {
-  char when[32];
-  Chrono::formatDateTime(when, sizeof(when));
+  char when[16];
+  Chrono::formatTime(when, sizeof(when));
   Brand::drawHeader(c, T(), "Somnium", Somnium::Ble::connected(), when);
 }
 
@@ -306,6 +306,7 @@ void ProcessPage::draw(Somnium::Ui::Canvas &c) {
   if (label_ != nullptr && label_[0] != '\0') {
     Text::drawIn(c, label_, Rect(0, 100, c.width(), 12), mutedCenter());
   }
+  Brand::drawBattery(c, T());
   if (failed_) {
     Text::drawIn(c, "hold shutter or click", Rect(0, static_cast<int16_t>(c.height() - 14),
                                                  c.width(), 12),
@@ -455,9 +456,10 @@ bool PreviewPage::handleAction(Somnium::Ui::NavAction action) {
 }
 
 void PreviewPage::drawChrome(Somnium::Ui::Canvas &c) {
-  c.fillRect(Rect(0, 0, c.width(), 12), T().surface);
-  Text::drawIn(c, "hold shutter or click: back", Rect(4, 2, c.width() - 8, 8),
+  c.fillRect(Rect(0, 0, c.width(), 14), T().surface);
+  Text::drawIn(c, "hold shutter: back", Rect(4, 2, static_cast<int16_t>(c.width() - 70), 8),
                TextStyle(T().text, 1));
+  Brand::drawBattery(c, T());
 
   c.fillRect(Rect(0, static_cast<int16_t>(c.height() - 16), c.width(), 16),
              T().surface);

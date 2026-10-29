@@ -12,6 +12,7 @@
 
 #include "Config.h"
 #include "Console.h"
+#include "Power.h"
 
 namespace Somnium {
 namespace {
@@ -30,6 +31,7 @@ BLEServer *sServer = nullptr;
 BLECharacteristic *sStatus = nullptr;
 BLECharacteristic *sPreviewChar = nullptr;
 BLECharacteristic *sSession = nullptr;
+BLECharacteristic *sBatteryLevel = nullptr;
 QueueHandle_t sLines = nullptr;
 
 bool sUp = false;
@@ -117,13 +119,27 @@ void publishStatus() {
              static_cast<unsigned>(sPreviewLen),
              static_cast<unsigned long>(sPreviewCrc));
   }
-  char body[160];
+  int packMv = -1;
+  const int pct = Power::batteryPercent();
+  Power::batteryMillivolts(packMv);
+  char batt[16] = "batt=? mv=?";
+  if (pct >= 0) {
+    snprintf(batt, sizeof(batt), "batt=%d mv=%d", pct, packMv);
+  }
+  char body[180];
   snprintf(body, sizeof(body),
-           "paired=%d conn=%d queue=%d batt=? chg=? mode=%s preview=%s",
-           sPaired ? 1 : 0, sConnected ? 1 : 0, sQueue, sMode, preview);
+           "paired=%d conn=%d queue=%d %s chg=? mode=%s preview=%s",
+           sPaired ? 1 : 0, sConnected ? 1 : 0, sQueue, batt, sMode, preview);
   sStatus->setValue(reinterpret_cast<uint8_t *>(body), strlen(body));
   if (sConnected) {
     sStatus->notify();
+  }
+  if (sBatteryLevel != nullptr && pct >= 0) {
+    uint8_t level = static_cast<uint8_t>(pct);
+    sBatteryLevel->setValue(&level, 1);
+    if (sConnected) {
+      sBatteryLevel->notify();
+    }
   }
 }
 
@@ -263,8 +279,18 @@ void startStack() {
   sSession->addDescriptor(new BLE2902());
 
   service->start();
+
+  // Standard Battery Service. Level is a uint8 percent, same number as batt=.
+  BLEService *battery = sServer->createService(BLEUUID(static_cast<uint16_t>(0x180F)));
+  sBatteryLevel = battery->createCharacteristic(
+      BLEUUID(static_cast<uint16_t>(0x2A19)),
+      BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+  sBatteryLevel->addDescriptor(new BLE2902());
+  battery->start();
+
   BLEAdvertising *advertising = BLEDevice::getAdvertising();
   advertising->addServiceUUID(kService);
+  advertising->addServiceUUID(BLEUUID(static_cast<uint16_t>(0x180F)));
   advertising->setScanResponse(true);
   BLEDevice::startAdvertising();
   sUp = true;
@@ -328,6 +354,12 @@ void Ble::poll() {
     handleLine(line.text);
   }
   pumpPreview();
+  static unsigned long sStatusAt = 0;
+  const unsigned long now = millis();
+  if (sConnected && now - sStatusAt > 2000) {
+    sStatusAt = now;
+    publishStatus();
+  }
 }
 
 void Ble::suspend() {
@@ -339,6 +371,7 @@ void Ble::suspend() {
   sStatus = nullptr;
   sPreviewChar = nullptr;
   sSession = nullptr;
+  sBatteryLevel = nullptr;
   sUp = false;
   sConnected = false;
   sPaired = false;

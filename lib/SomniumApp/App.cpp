@@ -460,6 +460,7 @@ void Runtime::begin(bool cameraOk) {
 
 void Runtime::tick() {
   Somnium::Host::poll();
+  Somnium::Power::sampleBattery();
   Somnium::Ble::setStatusContext(gMode.selected().id, Somnium::Transfer::queueDepth());
   Somnium::Ble::poll();
   Somnium::Transfer::poll();
